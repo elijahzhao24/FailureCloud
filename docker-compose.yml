@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      ARTIFACT_ROOT: /data/artifacts
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5}
+      REACTOR_API_URL: ${REACTOR_API_URL:-}
+      REACTOR_API_KEY: ${REACTOR_API_KEY:-}
+      NEBIUS_EXECUTION_ENDPOINT: ${NEBIUS_EXECUTION_ENDPOINT:-}
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - failurecloud-artifacts:/data/artifacts
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  failurecloud-artifacts:
+

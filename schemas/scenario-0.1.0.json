@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://failurecloud.dev/schemas/scenario-0.1.0.json",
+  "title": "FailureCloud Scenario 0.1.0",
+  "type": "object",
+  "required": ["schema_version", "scenario_id", "name", "domain", "environment", "robot", "objects", "dynamic_actors", "sensors", "task", "exports"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "domain": {"const": "warehouse_robotics"},
+    "seed": {"type": "integer"},
+    "environment": {"type": "object"},
+    "robot": {"type": "object"},
+    "objects": {"type": "array"},
+    "dynamic_actors": {"type": "array"},
+    "sensors": {"type": "object"},
+    "task": {"type": "object"},
+    "exports": {
+      "type": "array",
+      "items": {"enum": ["pybullet", "ros2_folder", "openpcdet", "isaac", "nebius"]}
+    }
+  },
+  "additionalProperties": false
+}
+

@@ -1,0 +1,11 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+numpy==2.2.5
+pillow==11.2.1
+pybullet==3.2.7
+anthropic==0.52.0
+httpx==0.28.1
+python-multipart==0.0.20
+pytest==8.3.5
+
