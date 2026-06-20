@@ -1,0 +1,764 @@
+
+FailureCloud PRD and Engineering Specification
+Executive summary
+FailureCloud should be built as a scenario-to-sensor-data compiler for physical AI, not as a generic “synthetic point cloud generator.” The product’s core value is that a user can describe a rare failure case in natural language, have the system expand that into a structured task, execute the task in a simulator, and export usable artifacts: LiDAR-like point clouds, RGB and depth frames, labels, calibration, ROS-friendly messages, and task success metrics. That framing is consistent with current physical-AI tooling: Isaac Sim publishes RTX LiDAR to ROS 2 as PointCloud2 and LaserScan; CARLA exposes ray-cast LiDAR, semantic LiDAR, depth, semantic, and instance-segmentation sensors; OpenPCDet supports custom LiDAR datasets with point clouds and 3D labels; and Nebius’s Physical AI Workbench is explicitly positioning itself as an orchestration layer for tools such as Isaac Sim, Isaac Lab, Cosmos, and GR00T. 
+
+For the hackathon, the technically strongest and most buildable design is a canonical intermediate representation centered on scenario.json, plus an adapter layer. The MVP backend should use PyBullet because it already has reference examples for rayTestBatch LiDAR-style ray casting and getCameraImage RGB/depth/segmentation capture, while the product architecture remains simulator-agnostic so the same scenario.json can later drive Isaac Sim, CARLA, or Gazebo. The canonical point-cloud storage for generated datasets should be .npy because that is the format OpenPCDet’s custom dataset tutorial expects; optional interoperability exports should include .pcd for PCL ecosystem compatibility and KITTI-style .bin for AV tooling. For ROS delivery, the system should publish and/or write sensor_msgs/PointCloud2, sensor_msgs/Image, and sensor_msgs/CameraInfo, and package those into a ROS 2 bag with metadata.yaml; ROS 2’s bag tooling supports storage plugins, including the official MCAP plugin. 
+
+The most important product decision is therefore this: FailureCloud should sell “repeatable edge-case tests for robots”, with training-data export as a byproduct. That makes the PyBullet MVP credible, aligns the product with real platform interfaces, and leaves a clean long-term path into Isaac Sim, CARLA, Gazebo, ROS 2 bags, OpenPCDet/KITTI exports, and Nebius’s YAML-driven physical-AI workflow layer. 
+
+Short PRD
+What it is
+FailureCloud is an edge-case task generator for physical AI. A user writes a prompt such as “generate a warehouse robot carrying water across a slippery floor while a dropped box blocks the aisle,” and the system turns that prompt into a structured scenario spec, a simulator-executable scene, and a sensor-and-label package that downstream robotics or autonomy tools can consume. The system is not trying to replace Isaac Sim, CARLA, Gazebo, or Nebius Workbench. Instead, it sits above them as the layer that creates difficult tasks, sensor settings, rewards, labels, and exports. That positioning is a better fit to the current simulator landscape, where Isaac Sim already supports USD-based worlds, RTX LiDAR and ROS 2 publishing; CARLA already supports AV sensor suites; Gazebo already supports LiDAR and other sensors; and Nebius is explicitly building a YAML/SDK/CLI workbench around composing physical-AI tools. 
+
+In product terms, FailureCloud has four linked jobs. First, it converts natural language into a scenario specification with environment, agents, hazards, sensors, and success criteria. Second, it compiles that scenario into a simulator-specific run using an adapter. Third, it records the outputs a real robot or AV stack would care about, including LiDAR-like point clouds, RGB, depth, segmentation, object poses, collisions, and episode metrics. Fourth, it exports those artifacts for the next tool in the chain: ROS 2 topics and bags, OpenPCDet-style point clouds and labels, KITTI-style calibration and label text, optional Isaac USD scene packaging, and later Nebius task manifests. That mirrors the interfaces that official tools actually expose: ROS PointCloud2 for generalized point data, Isaac Sim Replicator writers for custom synthetic-data outputs, OpenPCDet custom datasets in .npy plus .txt, and KITTI-family tooling with calibration and label files. 
+
+The right mental model is: software engineers write unit tests; FailureCloud writes unit tests for robots. A “test” in FailureCloud is a scene plus sensors plus labels plus a success metric. For warehouse and humanoid robotics, examples include slippery floors, dropped boxes, low-friction surfaces, partial occlusion, reflective packaging, unstable carry tasks, and near-collision recovery maneuvers. For AV, examples include fog, night, occluded pedestrians, blocked lanes, low-contrast objects, and unusual agent behavior. The system’s value is not that its point clouds are perfect; it is that failures become repeatable, parameterized, label-rich, and exportable. Nebius’s own physical-AI messaging highlights that rare, unpredictable scenarios and tooling fragmentation are key barriers; FailureCloud directly addresses both by generating those scenarios and packaging them into standard interfaces. 
+
+Use case and problem solved
+Physical-AI teams are bottlenecked by rare edge cases. Common scenarios are easy to collect; dangerous or low-frequency ones are not. That is especially painful when teams need more than pretty renderings and instead need the structured artifacts their stacks actually consume: point clouds, depth maps, RGB frames, transforms, labeled objects, and reproducible task outcomes. FailureCloud solves that pain by turning a textual failure description into an executable, measurable task. The user can then run the same task repeatedly, vary one factor at a time, export the results, and know exactly which object, sensor reading, or motion caused the failure. 
+
+The primary early use case should be robot task evaluation, not “foundation-model training data at production realism.” That makes the MVP much more defensible. PyBullet’s reference material shows that it can already provide the minimum set needed for a useful test harness: rigid-body simulation, camera images, depth buffers, segmentation masks with body IDs, and batched ray casting. That is enough for the hackathon product to create believable edge-case tasks and judge a policy or heuristic against explicit success metrics such as water_left_percent, collisions, time-to-goal, or object delivery success. Later, the same scenario can be re-run in higher-fidelity engines. 
+
+Success metrics
+The most important product success metric is time-to-new-test: how quickly a user can go from natural-language description to a runnable scenario with visible outputs. The second is export usefulness: whether the produced artifacts can load into at least one real downstream format without manual cleanup. The third is evaluation clarity: whether the system explains success or failure in measurable terms rather than simply showing a visualization. For the hackathon MVP, the target is a prompt-to-package pipeline that emits a scenario spec, PyBullet run, RGB/depth/LiDAR artifacts, object labels, and a task report. For medium term, adapter parity should mean the same scenario compiles into Isaac Sim, CARLA, or Gazebo, and exports into ROS 2 bags plus OpenPCDet/KITTI-style datasets. 
+
+A concise PRD summary is below.
+
+PRD field	Recommendation
+Product name	FailureCloud
+Product category	Edge-case task generator for physical AI
+Core input	Natural-language scenario prompt plus optional simulator/sensor presets
+Core output	scenario.json, simulator run, sensor frames, labels, calibration, task report, export bundle
+Primary user	Robotics engineer, autonomy engineer, research engineer, hackathon team
+Primary MVP use case	Warehouse or humanoid robot task: carry a cup across a slippery floor while avoiding an obstacle
+Core problem solved	Rare physical failures are hard to collect, reproduce, and label
+MVP success metric	Prompt-to-export under one demo session, with one runnable task and one downstream export path
+Medium-term success metric	Same scenario spec executable across PyBullet and one higher-fidelity engine
+Long-term success metric	Workbench integration where scenarios become train/eval jobs in external physical-AI platforms
+
+The table above is a recommendation, but it is grounded in the specific interface boundaries exposed by simulator and dataset tooling today. 
+
+Engineering architecture
+The right architecture is a canonical scenario layer plus adapters. The intermediate representation should remain stable even as execution backends change. That matches the current ecosystem: Isaac Sim expects USD-stage objects and can publish ROS 2 sensor messages, CARLA expects actors and blueprints in its world and returns sensor-specific measurement objects, OpenPCDet expects point arrays and annotations, and Nebius Workbench is built around YAML/SDK/CLI orchestration over multiple physical-AI tools. 
+
+Prompt UI
+
+Scenario Expansion Service
+
+scenario.json Canonical IR
+
+Simulator Adapter Layer
+
+PyBullet Adapter
+
+Isaac Sim Adapter
+
+CARLA Adapter
+
+Gazebo Adapter
+
+Task Evaluator
+
+Sensor Recorder
+
+Artifact Store
+
+Exporters
+
+OpenPCDet Export
+
+KITTI Export
+
+ROS 2 Bag Export
+
+Isaac USD Bundle
+
+Nebius Task Manifest
+
+
+
+Show code
+The architecture diagram above is the recommended decomposition because each target platform exposes different native abstractions. Isaac Sim is USD-native and pushes ROS 2 via bridge nodes and writers; CARLA exposes strongly typed sensor outputs including LidarMeasurement and SemanticLidarMeasurement; Gazebo centers on SDF and sensor components; OpenPCDet is not a simulator at all, but a training-time data consumer. Keeping scenario.json independent from those targets prevents lock-in. 
+
+Exporter
+Recorder
+Simulator
+Adapter
+Scenario Registry
+LLM Scenario Service
+User
+Exporter
+Recorder
+Simulator
+Adapter
+Scenario Registry
+LLM Scenario Service
+User
+Prompt + presets
+scenario.json
+Canonical scenario
+Build scene, actors, sensors
+RGB / depth / LiDAR / poses / contacts
+frame index + labels + metrics
+finalized episode bundle
+OpenPCDet / KITTI / ROS bag / USD bundle
+
+
+Show code
+Interaction layers
+The user-facing layer should be minimal: prompt entry, structured scenario editor, run controls, frame browser, and export pane. The backend should split into a scenario service, simulator adapters, recorder, evaluator, and exporter. This separation is practical because the downstream interfaces are not interchangeable. For example, ROS PointCloud2 is a packed binary message with explicit field descriptors; OpenPCDet’s custom template instead wants per-scene .npy point arrays and line-oriented label text; KITTI expects calibration text files and a different label convention; Isaac Lab scene and terrain import centers on USD. 
+
+Simulator adapters
+The adapter priorities should be as follows.
+
+Adapter	Near-term role	Why it fits	Main limitation
+PyBullet	Hackathon execution backend	Fast setup, rayTestBatch, getCameraImage, segmentation masks, strong RL utility	Limited sensor realism; not a production synthetic-data engine
+Isaac Sim / Isaac Lab	Medium-term robotics backend	USD-native, RTX LiDAR, ROS 2 PointCloud2, custom writers, Isaac Lab USD terrain support	Heavier operational complexity and GPU requirements
+CARLA	Medium-term AV backend	Native RGB/depth/LiDAR/semantic LiDAR sensor suite, raw XYZI access, AV semantics	More AV-specific than general robotics
+Gazebo	Medium-term ROS-native backend	Strong ROS/SDF/Gazebo sensor model path; useful for stack integration	Less photorealistic than Isaac/CARLA
+Nebius Workbench	Long-term orchestration backend	YAML manifest, SDK/CLI, artifact passing, composition of Isaac/Cosmos/GR00T	Public integration surface is still emerging
+
+Those tradeoffs are directly reflected in source documentation. PyBullet’s repository and examples show the exact MVP hooks needed. Isaac Sim provides official ROS 2 RTX LiDAR tutorials and custom-writer infrastructure. CARLA documents both regular and semantic LiDAR with raw point arrays. Gazebo documents LiDAR/GPU lidar sensors and sensor-noise support. Nebius now describes its Workbench as a YAML/SDK/CLI orchestration layer over physical-AI tools. 
+
+Exporters, storage, and CI
+The storage model should distinguish three artifact classes: scenario specs, frame data, and packaged exports. Scenario specs should be small JSON documents with explicit schema versioning. Frame data should remain columnar and file-based for easy debugging: .npy for canonical point arrays, .png for RGB previews, .npy for depth, .json for labels and trajectory/state logs. Export bundles should then materialize working consumer-specific views: OpenPCDet folders, KITTI-compatible folders, ROS 2 bags, or Isaac-ready USD bundles. This layering prevents repeated simulator runs when only export format changes. OpenPCDet’s custom tutorial and ROS 2 bag behavior both support that separation well. 
+
+For CI, the pragmatic recommendation is a matrix with schema validation, export golden tests, headless simulator smoke tests, and round-trip readers. The presence of official Python bag-writing APIs, official PointCloud2 message definitions, and dataset loaders that assume stable file structures means the project should test artifacts exactly as downstream tools will parse them. In practice that means validating a tiny scenario end-to-end in PyBullet, asserting that the OpenPCDet exporter emits loadable .npy/.txt pairs, checking that a ROS bag contains the expected topics and message types, and running one Isaac/CARLA adapter smoke test only when those backends are enabled. The recommendation is architectural rather than documented policy, but it follows directly from the interfaces the official tools define. 
+
+Data model and file formats
+The canonical project layout below is recommended because it cleanly separates canonical artifacts from derived export views, while still matching the folder patterns used by OpenPCDet and ROS 2 bags. OpenPCDet expects ImageSets/, points/, and labels/; ROS 2 bags live as a bag file plus metadata.yaml; and Isaac/ROS consumers benefit from explicit calibration and transform files. 
+
+text
+Copy
+failurecloud_run/
+  scenario.json
+  run_manifest.json
+  assets/
+    meshes/
+    textures/
+    robot_urdf/
+  frames/
+    lidar/
+      000000.npy
+      000001.npy
+    lidar_pcd/
+      000000.pcd
+      000001.pcd
+    camera_rgb/
+      000000.png
+      000001.png
+    camera_depth/
+      000000.npy
+      000001.npy
+    camera_seg/
+      000000.png
+      000001.png
+    state/
+      000000.json
+      000001.json
+    labels/
+      000000.json
+      000001.json
+  calib/
+    camera_info_front.json
+    lidar_to_base.json
+    lidar_to_camera_front.json
+    ego_pose.jsonl
+  metrics/
+    episode_summary.json
+    rewards.jsonl
+  exports/
+    openpcdet/
+    kitti/
+    rosbag2/
+    isaac/
+    web_preview/
+Canonical scenario schema
+The canonical schema should express intent, physics, sensor layout, and success criteria, while leaving rendering and engine-specific values overrideable by adapters. No official product defines this for you, so it should be treated as the platform’s main IP. It should also be versioned from day one because exporters and adapters will evolve independently. The schema below is a recommended starting point. It is designed to map cleanly onto PyBullet bodies and cameras, Isaac USD sensors, CARLA sensor blueprints, and ROS frame trees. 
+
+json
+Copy
+{
+  "schema_version": "0.1.0",
+  "scenario_id": "warehouse_cup_slippery_001",
+  "title": "Carry cup across slippery aisle",
+  "domain": "warehouse_robotics",
+  "seed": 42,
+  "environment": {
+    "type": "warehouse_aisle",
+    "floor": {
+      "friction": 0.15,
+      "visual_material": "wet_concrete"
+    },
+    "lighting": {
+      "preset": "indoor_warehouse_day"
+    }
+  },
+  "robot": {
+    "kind": "mobile_base",
+    "asset_ref": "robots/turtlebot_like.urdf",
+    "initial_pose": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+  },
+  "objects": [
+    {
+      "instance_id": "cup_1",
+      "class_name": "cup",
+      "asset_ref": "meshes/cup.obj",
+      "parent": "robot",
+      "mount_pose": {"xyz": [0.2, 0.0, 0.8], "rpy": [0.0, 0.0, 0.0]},
+      "state": {"water_left_percent": 100.0}
+    },
+    {
+      "instance_id": "box_1",
+      "class_name": "obstacle",
+      "asset_ref": "meshes/box.obj",
+      "initial_pose": {"xyz": [2.0, 0.4, 0.25], "rpy": [0.0, 0.0, 0.0]}
+    }
+  ],
+  "agents": [
+    {
+      "instance_id": "worker_1",
+      "class_name": "human",
+      "trajectory": {
+        "type": "linear",
+        "waypoints": [[1.6, -0.5, 0.0], [1.6, 0.7, 0.0]],
+        "speed_mps": 0.6
+      }
+    }
+  ],
+  "sensors": [
+    {
+      "sensor_id": "lidar_top",
+      "type": "lidar",
+      "parent": "robot",
+      "pose": {"xyz": [0.0, 0.0, 0.5], "rpy": [0.0, 0.0, 0.0]},
+      "config": {
+        "horizontal_fov_deg": 360,
+        "vertical_fov_deg": 0,
+        "num_rays": 1024,
+        "range_m": 15.0,
+        "publish_rate_hz": 10
+      }
+    },
+    {
+      "sensor_id": "front_cam",
+      "type": "rgbd_camera",
+      "parent": "robot",
+      "pose": {"xyz": [0.15, 0.0, 0.45], "rpy": [0.0, 0.0, 0.0]},
+      "config": {
+        "width": 640,
+        "height": 480,
+        "fov_deg": 90,
+        "near_m": 0.02,
+        "far_m": 20.0
+      }
+    }
+  ],
+  "task": {
+    "goal_pose": {"xyz": [4.0, 0.0, 0.0], "yaw": 0.0},
+    "timeout_s": 30.0
+  },
+  "success": {
+    "goal_reached": true,
+    "minimum_water_left_percent": 70.0,
+    "max_collisions": 0
+  }
+}
+Sensor frame formats
+The canonical file-format choices should be conservative and tooling-driven.
+
+Artifact	Canonical format	Why it should exist	Main downstream consumers	Notes
+LiDAR frame	.npy float32 N x 4 or N x 8	Best canonical internal format; trivial to load; OpenPCDet custom tutorial uses .npy	OpenPCDet, Python pipelines	Use x y z intensity minimum
+LiDAR interchange	.pcd	PCL-native interchange and visualization	PCL, Open3D-style workflows, point-cloud tools	PCD format officially supports metadata-rich point clouds
+KITTI-style LiDAR	.bin float32 packed	Common in AV toolchains and KITTI-family ecosystems	KITTI-style loaders, MMDetection3D, AV utilities	Prefer for KITTI export, not as canonical internal format
+RGB frame	.png	Simple preview and dataset export	CV stacks, web UI	Also store raw arrays if needed
+Depth frame	.npy float32	Preserve metric depth without quantization	Robotics/CV pipelines	Use separate preview PNG only for UI
+Segmentation frame	.png or .npy	Easy visual debugging	CV pipelines, UI	Integer class IDs if .npy
+ROS point cloud	sensor_msgs/PointCloud2	Standard live robotics representation	ROS 2, RViz	Packed binary blob with explicit fields
+ROS image	sensor_msgs/Image	Standard image representation	ROS 2, image pipelines	Pair with CameraInfo
+ROS bag	.mcap or .db3 + metadata.yaml	Standard transport/logging bundle	ROS 2 tooling	MCAP plugin is official; ros2 bag records topics/services/actions
+
+Those choices follow directly from the official interfaces. OpenPCDet’s custom dataset template uses .npy point arrays and .txt labels. PCL documents the PCD format and notes that PCD v0.7 adds VIEWPOINT sensor origin/orientation metadata. ROS PointCloud2 is a packed binary message whose layout is declared by fields, point_step, and row_step. ROS Image carries width, height, encoding, row stride, and data bytes. ROS bag creates a directory with metadata.yaml and the recorded bag file, while ROS 2’s official MCAP plugin provides MCAP storage support. 
+
+A recommended canonical LiDAR .npy row layout is:
+
+text
+Copy
+x, y, z, intensity, semantic_id, instance_id, ring, timestamp_ns
+Only the first four fields should be required in the MVP. The rest can be optional or filled with sentinel values in PyBullet. That recommendation matches the minimum needed for OpenPCDet plus the richer metadata patterns already supported by Isaac Sim’s PointCloud2 writers and CARLA’s semantic LiDAR. Isaac Sim can add intensity, per-point timestamps, and object IDs; CARLA’s semantic LiDAR exposes point coordinates, incidence cosine, object index, and semantic tag. 
+
+ROS PointCloud2 mapping
+FailureCloud should provide a deterministic mapping from canonical .npy arrays into ROS 2 PointCloud2. The message spec says the cloud can be 1D or 2D, uses a fields array to describe field layout, and stores point bytes in data. The sensor_msgs_py.point_cloud2 helper code provides create_cloud() and dtype conversion utilities for structured or unstructured NumPy arrays. 
+
+A recommended MVP mapping is:
+
+Field	Datatype	Offset	Meaning
+x	FLOAT32	0	meters
+y	FLOAT32	4	meters
+z	FLOAT32	8	meters
+intensity	FLOAT32	12	normalized return strength or proxy
+semantic_id	UINT32	16	optional class ID
+instance_id	UINT32	20	optional object instance ID
+
+That yields point_step = 24 bytes for the richer MVP variant, or point_step = 16 for pure XYZI. If the cloud is unordered, ROS expects height = 1 and width = number_of_points. If later you target Isaac-style metadata parity, reserve field names like object_id_0..3 for 128-bit object IDs and timestamp_0, timestamp_1 for 64-bit split timestamps because that is exactly how Isaac Sim 6.0 encodes those metadata channels into PointCloud2. 
+
+Label formats
+FailureCloud should support two label families.
+
+The first is OpenPCDet native custom format, because it is the cleanest training-proof export for the MVP. OpenPCDet’s tutorial expects .txt annotations where each line is [x y z dx dy dz heading_angle category_name], plus .npy point clouds and ImageSets train/val splits. 
+
+Example OpenPCDet label file:
+
+text
+Copy
+1.50 1.46 0.10 0.08 0.08 0.15 0.00 Cup
+2.00 0.40 0.25 0.50 0.50 0.40 0.00 Obstacle
+1.60 0.10 0.90 0.45 0.45 1.75 1.57 Human
+The second is KITTI-compatible export, because many AV stacks and converters still use that organization. The official KITTI devkit defines one object per line with 15 required columns: type, truncated, occluded, alpha, 2D bbox left/top/right/bottom, 3D dimensions height/width/length, 3D location in camera coordinates, and rotation_y; result files add a score. The same readme also defines the projection relationship x = P2 * R0_rect * Tr_velo_to_cam * y for projecting Velodyne points into the left color image. MMDetection3D recommends reorganizing custom datasets into KITTI format when that route is easier than building a new dataset implementation from scratch. 
+
+Example KITTI-compatible label line:
+
+text
+Copy
+Cup 0.00 0 -1.57 312.0 190.0 338.0 244.0 0.15 0.08 0.08 1.20 0.90 3.50 0.00
+For warehouse and humanoid robotics, KITTI is not a semantic ideal, but it remains a useful export dialect because so many existing loaders understand it. The recommendation is therefore: use OpenPCDet native custom format for the MVP, and treat KITTI export as a compatibility layer. That keeps the internal semantics sane while still satisfying common AV expectations. 
+
+Calibration files
+FailureCloud should emit both JSON-native calibration and KITTI-style calibration text. ROS and many modern pipelines prefer explicit machine-readable JSON or direct message fields, while KITTI-family code prefers line-oriented text matrices. ROS CameraInfo defines the camera intrinsics and projection model; its paired Image message defines the optical frame convention with +x right, +y down, and +z into the image plane. 
+
+Recommended JSON files:
+
+json
+Copy
+{
+  "camera_id": "front_cam",
+  "width": 640,
+  "height": 480,
+  "distortion_model": "plumb_bob",
+  "K": [525.0, 0.0, 320.0, 0.0, 525.0, 240.0, 0.0, 0.0, 1.0],
+  "D": [0.0, 0.0, 0.0, 0.0, 0.0],
+  "R": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+  "P": [525.0, 0.0, 320.0, 0.0, 0.0, 525.0, 240.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+}
+json
+Copy
+{
+  "child_frame": "front_cam",
+  "parent_frame": "lidar_top",
+  "T_parent_child": [
+    [1.0, 0.0, 0.0, 0.15],
+    [0.0, 1.0, 0.0, 0.00],
+    [0.0, 0.0, 1.0, -0.05],
+    [0.0, 0.0, 0.0, 1.0]
+  ]
+}
+Recommended KITTI-style calib text:
+
+text
+Copy
+P2: 525.0 0.0 320.0 0.0 0.0 525.0 240.0 0.0 0.0 0.0 1.0 0.0
+R0_rect: 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
+Tr_velo_to_cam: 1.0 0.0 0.0 0.15 0.0 1.0 0.0 0.00 0.0 0.0 1.0 -0.05
+That encoding is directly compatible with the coordinate transform relationships documented in the KITTI devkit and with ROS optical-frame expectations. 
+
+ROS bag structure
+For ROS export, the cleanest recommendation is a dedicated bag containing /lidar/points, /camera/front/image_raw, /camera/front/camera_info, /camera/front/depth, /tf, and /clock. ROS 2 documentation states that ros2 bag records published topics, services, and actions and stores metadata.yaml alongside the bag file. The official rosbag2_storage_mcap package provides MCAP storage support, so .mcap is a reasonable default for a modern ROS 2 export path. 
+
+Recommended ROS bag folder:
+
+text
+Copy
+rosbag2_edge_case_001/
+  metadata.yaml
+  rosbag2_edge_case_001_0.mcap
+Recommended topics:
+
+Topic	Message type
+/lidar/points	sensor_msgs/msg/PointCloud2
+/camera/front/image_raw	sensor_msgs/msg/Image
+/camera/front/depth	sensor_msgs/msg/Image
+/camera/front/camera_info	sensor_msgs/msg/CameraInfo
+/tf	tf2_msgs/msg/TFMessage
+/clock	rosgraph_msgs/msg/Clock
+
+The writer can later be implemented with rosbag2_py or emitted live and recorded through ros2 bag; ROS also documents Python APIs for writing bags from your own code. 
+
+Isaac USD export notes
+For Isaac export, FailureCloud should not attempt to export point clouds as the primary scene artifact. The correct export is scene/terrain/robot assets as USD, then let Isaac Sim or Isaac Lab generate higher-fidelity sensing from that USD stage. Isaac Sim’s URDF importer is explicitly designed to convert URDF robots into USD; Isaac Lab’s terrain importer supports terrain_type='usd' and a usd_path; and Isaac Lab documents running policies inside prebuilt USD scenes. Isaac Sim’s synthetic data recorder and Replicator writers also support custom output formats, which is useful if FailureCloud later wants to emit its own dataset schema directly from Isaac rather than re-convert from generic annotations. 
+
+Recommended Isaac bundle:
+
+text
+Copy
+exports/isaac/
+  scene.usd
+  robots/
+    mobile_base.usd
+  sensors/
+    front_cam.json
+    lidar_top.json
+  task/
+    scenario.yaml
+    success_metric.json
+The main engineering note is that FailureCloud’s USD export should be scene-centric, while point clouds remain sensor outputs. That fits both Isaac’s core USD model and industry practice. 
+
+Export target comparison
+Export target	Files	Best for	Main strength	Main drawback
+OpenPCDet custom	.npy points, .txt labels, ImageSets/*.txt	Hackathon proof that data is trainable	Simplest, officially documented custom path	Less interoperable outside Python/PCDet
+KITTI-compatible	.bin or .npy, label_2/*.txt, calib/*.txt, ImageSets/*.txt	AV compatibility	Broad ecosystem familiarity	Awkward outside camera-centric AV conventions
+ROS 2 bag	.mcap or .db3 plus metadata.yaml	Robotics integration, replay, RViz	Native robotic stack consumption	Harder to inspect manually than flat files
+Isaac bundle	.usd stage and configs	Higher-fidelity robotics and synthetic data	Best path to RTX LiDAR and Isaac workflows	Heavier runtime and asset pipeline
+CARLA bundle	scenario plus sensor configs	AV evaluation	Rich built-in road-world sensors	Less general for non-AV robotics
+PCD cloud dump	.pcd	Interchange, visualization, tooling	Excellent compatibility with PCL ecosystem	Weak as training canonical format
+
+These tradeoffs follow from the official docs for OpenPCDet, ROS 2 bags, PCL PCD, Isaac Sim/Lab, and CARLA. 
+
+Implementation plan and code guidance
+Prioritized milestones
+The recommended milestone sequence is below.
+
+Phase	Goal	Deliverable
+Hackathon MVP	One complete edge-case task pipeline on PyBullet	Prompt → scenario.json → PyBullet run → RGB/depth/LiDAR → labels → OpenPCDet export → simple task report
+Medium term	Higher-fidelity backend and broader exports	Isaac Sim adapter, CARLA adapter for AV, Gazebo/ROS-native adapter, ROS bag writer
+Long term	External workbench integration	Nebius manifest export, job submission hooks, artifact handoff to workbench pipelines
+
+The MVP should stay narrow: one domain, one success metric, one clean export path. PyBullet supplies the exact ingredients needed to prove the concept quickly: batched ray casting, RGB/depth capture, segmentation masks, and rigid-body physics. Isaac/CARLA/Gazebo should come later because each adds real value only once the canonical scenario model and exporter layer are stable. Nebius should be last because its value is orchestration, not initial signal generation. 
+
+Recommended libraries
+For the MVP, use FastAPI for backend orchestration, Pydantic or JSON Schema validation for scenario.json, PyBullet for execution, NumPy for canonical arrays, and Open3D or a lightweight Three.js viewer for visualizing point clouds. For ROS export, use rclpy, sensor_msgs, sensor_msgs_py.point_cloud2, and optionally rosbag2_py. For PCD export, use Open3D or PCL-compatible writers. The simulator-specific future libraries are straightforward from official ecosystems: Isaac Sim / Isaac Lab Python APIs for USD and sensors, CARLA Python API for actor/sensor control, and Gazebo/SDF tooling plus ROS bridges for ROS-native use. The choice of exact LLM provider can remain unconstrained because the key product artifact is the structured schema, not model lock-in. 
+
+LLM scenario expansion pseudocode
+The scenario-expansion stage is an information extraction and normalization layer. It should be deterministic on output shape and permissive on input language. The model’s job is not to invent arbitrary worlds; it is to fill the schema safely and predictably.
+
+python
+Copy
+from typing import Any, Dict
+
+SCENARIO_SYSTEM_PROMPT = """
+You are a scenario compiler for physical AI.
+Return valid JSON matching the scenario schema.
+Do not invent unsupported fields.
+Ground all values in a simulator-executable task.
+"""
+
+def expand_prompt_to_scenario(llm_client, user_prompt: str) -> Dict[str, Any]:
+    schema_hint = {
+        "schema_version": "0.1.0",
+        "domain": "warehouse_robotics | autonomous_driving | humanoid",
+        "environment": {},
+        "robot": {},
+        "objects": [],
+        "agents": [],
+        "sensors": [],
+        "task": {},
+        "success": {}
+    }
+
+    response = llm_client.generate_json(
+        system=SCENARIO_SYSTEM_PROMPT,
+        user={
+            "prompt": user_prompt,
+            "schema_hint": schema_hint,
+            "defaults": {
+                "publish_rate_hz": 10,
+                "depth_camera_encoding": "32FC1",
+                "pointcloud_features": ["x", "y", "z", "intensity"]
+            }
+        }
+    )
+
+    validate_against_schema(response)
+    return response
+This pattern is a recommendation, but it is justified by the downstream strictness of the consumers: PointCloud2 has explicit fields; OpenPCDet requires a fixed custom label shape; KITTI has fixed text columns; and Isaac/ROS import paths are sensitive to missing structural metadata. Structured JSON generation is therefore not optional; it is central. 
+
+PyBullet scene builder pseudocode
+Use PyBullet to instantiate the world from scenario.json, set physics parameters, and map every body to a stable instance/class registry. PyBullet’s repository recommends PyBullet specifically for robotics and RL, and the examples show the exact APIs needed. 
+
+python
+Copy
+import pybullet as p
+import pybullet_data
+
+class SceneBuilder:
+    def __init__(self, scenario: dict):
+        self.scenario = scenario
+        self.body_registry = {}  # bodyUniqueId -> metadata
+
+    def build(self) -> int:
+        client = p.connect(p.DIRECT)
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        p.setGravity(0, 0, -9.81)
+
+        # floor
+        plane_id = p.loadURDF("plane.urdf")
+        floor_friction = self.scenario["environment"]["floor"]["friction"]
+        p.changeDynamics(plane_id, -1, lateralFriction=floor_friction)
+        self.body_registry[plane_id] = {
+            "instance_id": "floor_1",
+            "class_name": "floor"
+        }
+
+        # robot
+        robot_cfg = self.scenario["robot"]
+        robot_id = p.loadURDF(
+            robot_cfg["asset_ref"],
+            basePosition=robot_cfg["initial_pose"]["xyz"],
+            baseOrientation=p.getQuaternionFromEuler(robot_cfg["initial_pose"]["rpy"]),
+            useFixedBase=False,
+        )
+        self.body_registry[robot_id] = {
+            "instance_id": "robot_1",
+            "class_name": robot_cfg["kind"]
+        }
+
+        # objects
+        for obj in self.scenario["objects"]:
+            if obj.get("parent") == "robot":
+                continue
+            body_id = p.loadURDF(
+                obj["asset_ref"].replace(".obj", ".urdf"),
+                basePosition=obj["initial_pose"]["xyz"],
+                baseOrientation=p.getQuaternionFromEuler(obj["initial_pose"]["rpy"]),
+            )
+            self.body_registry[body_id] = {
+                "instance_id": obj["instance_id"],
+                "class_name": obj["class_name"]
+            }
+
+        return client
+Ray-cast LiDAR pseudocode
+PyBullet’s batchRayCast.py shows the core pattern: construct rayFrom and rayTo, call rayTestBatch, then read results[i][0] as the hit object ID and results[i][3] as the hit position. That is enough to build a usable LiDAR-like point cloud for the MVP. 
+
+python
+Copy
+import math
+import numpy as np
+import pybullet as p
+
+def capture_lidar_xyzi(sensor_origin, num_rays=1024, ray_len=15.0):
+    ray_from = []
+    ray_to = []
+
+    for i in range(num_rays):
+        theta = 2.0 * math.pi * (i / num_rays)
+        ray_from.append(sensor_origin)
+        ray_to.append([
+            sensor_origin[0] + ray_len * math.sin(theta),
+            sensor_origin[1] + ray_len * math.cos(theta),
+            sensor_origin[2],
+        ])
+
+    results = p.rayTestBatch(ray_from, ray_to)
+    points = []
+    hit_info = []
+
+    for i, res in enumerate(results):
+        hit_body_id = res[0]
+        hit_fraction = res[2]
+        hit_position = res[3]
+
+        if hit_body_id >= 0:
+            intensity = float(1.0 - hit_fraction)  # MVP proxy only
+            points.append([hit_position[0], hit_position[1], hit_position[2], intensity])
+            hit_info.append({
+                "ray_index": i,
+                "body_id": hit_body_id,
+                "hit_fraction": hit_fraction
+            })
+
+    return np.asarray(points, dtype=np.float32), hit_info
+RGB and depth capture pseudocode
+PyBullet’s getCameraImageTest.py shows the exact depth conversion from depth buffer to metric depth, and the HelloPyBullet notebook documents that getCameraImage returns RGB, depth, and a segmentation mask with body IDs for visible objects. Those two facts are enough to build the MVP camera path. 
+
+python
+Copy
+import numpy as np
+import pybullet as p
+
+def capture_rgbd(width=640, height=480, fov=90.0, near=0.02, far=20.0):
+    view = p.computeViewMatrix(
+        cameraEyePosition=[0.2, 0.0, 0.5],
+        cameraTargetPosition=[2.0, 0.0, 0.5],
+        cameraUpVector=[0.0, 0.0, 1.0],
+    )
+    proj = p.computeProjectionMatrixFOV(
+        fov=fov,
+        aspect=width / height,
+        nearVal=near,
+        farVal=far,
+    )
+
+    images = p.getCameraImage(
+        width,
+        height,
+        viewMatrix=view,
+        projectionMatrix=proj,
+        renderer=p.ER_TINY_RENDERER,
+        flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX,
+    )
+
+    rgba = np.reshape(images[2], (height, width, 4))
+    depth_buffer = np.reshape(images[3], (width, height))
+    seg = np.reshape(images[4], (width, height))
+
+    depth_m = far * near / (far - (far - near) * depth_buffer)
+    rgb = rgba[:, :, :3]
+
+    return rgb, depth_m.T.astype(np.float32), seg.T.astype(np.int32)
+Auto-labeler pseudocode
+Auto-labeling should combine scene registry data, simulator state, ray hits, and optional segmentation masks. PyBullet gives you body IDs through ray tests and segmentation buffers; those IDs should always map back to instance_id and class_name through a single registry dictionary. That is the MVP equivalent of Isaac Sim’s object-ID-to-prim-path mapping, which the RTX LiDAR tutorial exposes for richer metadata. 
+
+python
+Copy
+def label_frame(body_registry, hit_info, object_states):
+    objects = []
+
+    for body_id, meta in body_registry.items():
+        if body_id not in object_states:
+            continue
+
+        pos, quat, aabb = object_states[body_id]
+        instance_hits = [h for h in hit_info if h["body_id"] == body_id]
+
+        objects.append({
+            "instance_id": meta["instance_id"],
+            "class_name": meta["class_name"],
+            "position_xyz": list(pos),
+            "orientation_xyzw": list(quat),
+            "aabb_min": list(aabb[0]),
+            "aabb_max": list(aabb[1]),
+            "num_lidar_hits": len(instance_hits)
+        })
+
+    return {"objects": objects}
+OpenPCDet exporter pseudocode
+OpenPCDet’s custom format is the simplest real exporter because it asks for exactly what FailureCloud can already compute: .npy points and .txt boxes. 
+
+python
+Copy
+from pathlib import Path
+import numpy as np
+
+def export_openpcdet(run_dir: Path, frame_id: str, points_xyzi: np.ndarray, labels: dict):
+    points_dir = run_dir / "exports" / "openpcdet" / "points"
+    labels_dir = run_dir / "exports" / "openpcdet" / "labels"
+    imagesets_dir = run_dir / "exports" / "openpcdet" / "ImageSets"
+    points_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    imagesets_dir.mkdir(parents=True, exist_ok=True)
+
+    np.save(points_dir / f"{frame_id}.npy", points_xyzi.astype(np.float32))
+
+    lines = []
+    for obj in labels["objects"]:
+        if "bbox_3d" not in obj:
+            continue
+        x, y, z, dx, dy, dz, heading = obj["bbox_3d"]
+        cls = obj["class_name"]
+        lines.append(f"{x:.3f} {y:.3f} {z:.3f} {dx:.3f} {dy:.3f} {dz:.3f} {heading:.3f} {cls}")
+
+    (labels_dir / f"{frame_id}.txt").write_text("\n".join(lines) + "\n")
+
+    train_file = imagesets_dir / "train.txt"
+    existing = train_file.read_text().splitlines() if train_file.exists() else []
+    if frame_id not in existing:
+        existing.append(frame_id)
+        train_file.write_text("\n".join(existing) + "\n")
+ROS 2 PointCloud2 exporter pseudocode
+The cleanest exporter path is to create a structured NumPy array and pass it through sensor_msgs_py.point_cloud2.create_cloud, mirroring the official helper module’s design. The fields below match the PointCloud2 spec. 
+
+python
+Copy
+from std_msgs.msg import Header
+from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs_py import point_cloud2
+import numpy as np
+
+def numpy_xyzi_to_pointcloud2(points_xyzi: np.ndarray, frame_id: str, stamp):
+    header = Header()
+    header.frame_id = frame_id
+    header.stamp = stamp
+
+    fields = [
+        PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+        PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+    ]
+
+    return point_cloud2.create_cloud(header, fields, points_xyzi)
+If you want direct ROS bag writing instead of publishing and recording externally, use rosbag2_py’s writer API; ROS’s official tutorials document writing bags from your own Python node, and the bag writer class requires topic metadata before messages are written. 
+
+Simple RL success metric pseudocode
+For the hackathon, do not implement full fluid simulation. Represent water as a task state variable and decrement it as a function of tilt, acceleration, and collisions. That is a design recommendation, but it cleanly fits the project’s evaluation purpose and keeps the MVP focused on repeatable task generation. PyBullet’s suitability for RL and rigid-body tasks supports this simplification. 
+
+python
+Copy
+def update_water_metric(water_left_percent: float,
+                        cup_tilt_deg: float,
+                        cup_linear_accel: float,
+                        collision_count_delta: int,
+                        dt: float) -> float:
+    spill_rate = 0.0
+
+    if cup_tilt_deg > 15.0:
+        spill_rate += (cup_tilt_deg - 15.0) * 0.08
+
+    if cup_linear_accel > 2.0:
+        spill_rate += (cup_linear_accel - 2.0) * 0.20
+
+    spill_rate += collision_count_delta * 8.0
+    water_left_percent -= spill_rate * dt
+    return max(0.0, min(100.0, water_left_percent))
+
+
+def episode_success(goal_reached: bool,
+                    water_left_percent: float,
+                    total_collisions: int,
+                    min_water_required: float = 70.0) -> bool:
+    return goal_reached and water_left_percent >= min_water_required and total_collisions == 0
+Medium-term and long-term adapter notes
+For Isaac Sim, the adapter should compile scenario.json into USD stage elements and sensor prims, then use RTX LiDAR and Replicator writers for higher-fidelity outputs. For CARLA, the adapter should compile scenario elements into world actors and sensor blueprints, then capture the documented raw_data buffers from LiDAR and semantic LiDAR. For Gazebo, the adapter should emit SDF/URDF plus sensor config, and optionally bridge to ROS topics. For Nebius, the adapter should export a manifest that describes task assets, declared stages, dependencies, outputs, and metrics because Nebius’s current Workbench positioning is a YAML-based orchestration layer with artifact passing, CLI, and SDK support. 
+
+Testing, validation, and demo package
+FailureCloud’s testing strategy should focus on artifact correctness, not just code-path execution. The canonical regressions should include: validating scenario.json against schema, confirming that each body in the scene has a registry entry, checking that LiDAR points are finite and in range, verifying that PointCloud2 field layout matches the selected point schema, confirming that OpenPCDet export contains matching counts for scenes/labels/splits, and ensuring that the task report contains deterministic success criteria. Those tests are especially important because downstream consumers such as PointCloud2 readers, OpenPCDet custom loaders, and KITTI-style converters assume strict format adherence. 
+
+A minimal validation matrix is recommended below.
+
+Validation step	What to assert
+Schema validation	scenario.json passes JSON Schema or Pydantic validation
+Scene build smoke test	PyBullet scene loads headless and steps at least one frame
+LiDAR capture test	.npy array is float32 and shape is N x 4 or richer
+Camera capture test	RGB and depth dimensions align; depth is finite
+Label consistency test	Every labeled instance exists in body registry
+OpenPCDet export test	points/*.npy, labels/*.txt, ImageSets/train.txt all agree on frame IDs
+ROS export test	Bag contains expected topics and message types
+Task metric test	Success/failure changes correctly with synthetic tilt/collision inputs
+
+Demo script
+The best demo is one tight loop with one task, one visible failure metric, and one real export path. A judge-facing script should look like this:
+
+Enter the prompt: “Create a warehouse robot task where a robot must carry a cup of water across a slippery floor while avoiding a dropped box.”
+Show the generated scenario.json in a structured editor.
+Launch the PyBullet simulation and render three live panes: RGB, depth, and LiDAR point cloud.
+Show real-time episode telemetry: water_left_percent, collisions, distance to goal.
+At the end of the run, display a task report: passed or failed, plus reasons.
+Open the export pane and download two artifacts: openpcdet/ and rosbag2/.
+If time allows, show one downstream proof: RViz for the ROS bag or a file preview of the OpenPCDet folder.
+That script is credible because every step aligns with documented downstream interfaces rather than proprietary magic. PyBullet provides the MVP sensor primitives, ROS 2 and RViz are natural consumers of PointCloud2 and Image, and OpenPCDet’s custom dataset path is explicitly documented. 
+
+Judge-facing deliverables
+The deliverables that will make the project feel real are not slides; they are artifacts.
+
+Deliverable	Why it matters
+Live prompt-to-simulation demo	Proves the generation loop works
+scenario.json	Shows a stable canonical representation
+One packaged run folder	Shows raw artifacts and reproducibility
+OpenPCDet export	Proves training-pipeline compatibility
+ROS 2 bag export	Proves robotics-stack compatibility
+Short architecture diagram	Makes the scenario/adapters model legible
+Task report with explicit failure reason	Shows this is evaluation infrastructure, not just visualization
+
+The strongest final framing for judges is: FailureCloud turns natural-language robot failures into executable edge-case tests with sensor outputs, labels, and pass/fail metrics. That statement is both technically defensible and well aligned with the official interfaces exposed by today’s robotics and autonomy tooling. 
+

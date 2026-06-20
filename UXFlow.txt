@@ -1,0 +1,653 @@
+Ok so what is the flow of our platform. what is generated on our platform. given natural lanague what are we generating, can we provide a preview on our end? how do we integrate this with other tools
+
+The cleanest flow is:
+
+Natural language → robot test case → preview simulation → sensor/label/reward output → export to other tools
+
+Your platform should not look like “we made a simulator.” It should look like:
+
+We generate executable robot unit tests.
+
+1. Platform flow
+Step 1: User describes an edge case
+
+Example prompt:
+
+Generate a warehouse robot test where a mobile robot must carry a cup of water across a slippery floor while avoiding a dropped box and a human crossing the aisle.
+
+The user can also choose:
+
+Robot type: wheeled robot
+Environment: warehouse
+Sensors: RGB, depth, LiDAR
+Goal: reach target zone
+Success metric: water left > 70%, no collision
+Export target: PyBullet, ROS, OpenPCDet, Isaac
+Step 2: Your platform generates a structured scenario
+
+The LLM turns the prompt into a scenario spec.
+
+This is the core artifact your platform owns.
+
+{
+  "name": "slippery_cup_carry",
+  "environment": {
+    "type": "warehouse",
+    "floor_friction": 0.25,
+    "lighting": "dim"
+  },
+  "robot": {
+    "type": "mobile_base",
+    "start_position": [0, 0, 0],
+    "goal_position": [5, 0, 0]
+  },
+  "objects": [
+    {
+      "id": "cup_1",
+      "type": "cup",
+      "position": [0.2, 0, 0.8],
+      "contains": "water"
+    },
+    {
+      "id": "box_1",
+      "type": "obstacle",
+      "position": [2.5, 0.3, 0.2]
+    },
+    {
+      "id": "human_1",
+      "type": "dynamic_obstacle",
+      "trajectory": [[3, -1, 0], [3, 1, 0]]
+    }
+  ],
+  "sensors": {
+    "rgb_camera": true,
+    "depth_camera": true,
+    "lidar": {
+      "num_rays": 720,
+      "range": 10,
+      "height": 0.5
+    }
+  },
+  "success": {
+    "min_water_left_percent": 70,
+    "max_collisions": 0,
+    "must_reach_goal": true
+  }
+}
+
+This is what you generate from natural language.
+
+2. What is generated on your platform?
+
+You generate a Robot Test Bundle.
+
+Think of it like a package:
+
+failurecloud_test/
+  scenario.json
+  sim_config.json
+  reward_config.json
+  sensors_config.json
+  assets_manifest.json
+  preview/
+  outputs/
+  exports/
+
+Inside that bundle, you generate several things.
+
+A. Scenario spec
+
+This defines the world:
+
+environment
+robot
+objects
+hazards
+materials
+lighting
+weather
+initial positions
+dynamic actors
+
+Example:
+
+warehouse + slippery floor + robot + cup + box + human crossing
+B. Task spec
+
+This defines what the robot is supposed to do:
+
+start position
+goal position
+allowed actions
+termination conditions
+success conditions
+failure conditions
+
+Example:
+
+Robot must reach the goal while keeping at least 70% water in the cup.
+C. Sensor spec
+
+This defines what data the robot collects:
+
+RGB camera
+depth camera
+LiDAR/raycast sensor
+collision sensor
+robot pose
+object poses
+
+Example output per frame:
+
+rgb/000001.png
+depth/000001.npy
+lidar/000001.npy
+labels/000001.json
+D. Reward/success spec
+
+This defines RL-style evaluation.
+
+Example:
+
+{
+  "reward": {
+    "goal_progress": 1.0,
+    "collision_penalty": -10.0,
+    "spill_penalty": -0.5,
+    "success_bonus": 20.0
+  },
+  "success": {
+    "water_left_percent": ">= 70",
+    "collisions": "== 0",
+    "goal_reached": true
+  }
+}
+
+For the cup example, you do not need real fluid simulation. You simulate water as a state variable:
+
+water_left_percent = 100
+
+Then reduce it based on:
+
+cup tilt
+robot acceleration
+collisions
+floor slipperiness
+
+That is enough for a strong hackathon demo.
+
+E. Simulator adapter files
+
+Your platform can generate code/config for different tools.
+
+For PyBullet MVP:
+
+exports/pybullet/
+  run_sim.py
+  scenario.json
+  assets/
+
+For Isaac later:
+
+exports/isaac/
+  scene_config.yaml
+  scene.usd
+  task_config.json
+
+For ROS:
+
+exports/ros/
+  topics.json
+  lidar_points/
+  camera_rgb/
+  camera_depth/
+
+For OpenPCDet:
+
+exports/openpcdet/
+  ImageSets/
+    train.txt
+  points/
+    000001.npy
+  labels/
+    000001.txt
+3. Can you provide a preview on your end?
+
+Yes. You should absolutely provide a preview.
+
+There are two preview levels.
+
+Preview 1: Fast browser preview
+
+This is the simple visual preview.
+
+After the user types the prompt, show a 3D-ish scene in the browser:
+
+warehouse floor
+robot
+cup
+box
+goal zone
+human path
+LiDAR rays
+
+This can be done with:
+
+Three.js
+React Three Fiber
+simple cubes/meshes
+
+This preview does not need perfect physics. It is just to show:
+
+“Here is the generated test case.”
+
+This is useful because it gives instant feedback before simulation runs.
+
+Preview 2: PyBullet simulation preview
+
+This is the real MVP demo.
+
+Backend runs PyBullet and streams/returns:
+
+RGB frame
+depth map
+LiDAR points
+robot state
+cup tilt
+water left
+collision count
+success/failure
+
+In your frontend, show tabs:
+
+Scene
+RGB
+Depth
+LiDAR
+Labels
+Reward
+Export
+
+The live dashboard could show:
+
+Status: Running
+Water left: 82%
+Cup tilt: 11.4°
+Collisions: 0
+Distance to goal: 2.1m
+Reward: 37.5
+
+At the end:
+
+Result: FAILED
+Reason: Robot reached the goal, but only 48% water remained.
+Cause: High acceleration on slippery floor caused cup tilt above threshold.
+
+This is the “wow” moment.
+
+4. What exactly should the user see?
+
+The UI flow should be:
+
+Page 1: Generate
+Describe a robot failure case:
+[ text box ]
+
+Example:
+“Robot carries a cup across a slippery warehouse floor while avoiding a dropped box.”
+
+[ Generate Test Case ]
+Page 2: Scenario
+
+Show editable generated config:
+
+Environment: Warehouse
+Robot: Mobile base
+Hazards: Slippery floor, dropped box, crossing human
+Sensors: RGB, depth, LiDAR
+Success: reach goal with >70% water left
+
+Buttons:
+
+[ Edit ]
+[ Preview ]
+[ Run Simulation ]
+Page 3: Preview
+
+Show:
+
+3D scene preview
+robot path
+object placements
+sensor cones/rays
+
+Buttons:
+
+[ Run Test ]
+[ Generate Harder Variant ]
+Page 4: Results
+
+Show:
+
+RGB video
+Depth map
+LiDAR point cloud
+Reward graph
+Water-left graph
+Collision log
+Pass/fail result
+
+Example:
+
+FAILED
+Water left: 48%
+Collisions: 0
+Max cup tilt: 31°
+Failure reason: unstable turn on low-friction floor
+Page 5: Export
+
+Show export options:
+
+[ Download PyBullet Task ]
+[ Export ROS-style Sensor Data ]
+[ Export OpenPCDet Dataset ]
+[ Export Isaac Config ]
+[ Save to Scenario Library ]
+5. How do you integrate with other tools?
+
+Your platform integrates through adapters.
+
+Core idea:
+
+scenario.json stays the same
+adapters convert it into different tool formats
+
+Architecture:
+
+Natural language
+   ↓
+Scenario Compiler
+   ↓
+scenario.json
+   ↓
+Adapters
+   ├── PyBullet Adapter
+   ├── ROS Adapter
+   ├── OpenPCDet Adapter
+   ├── Isaac Adapter
+   ├── CARLA Adapter
+   └── Nebius/Ultimate Bots Adapter
+Integration with PyBullet
+
+This is your actual hackathon backend.
+
+Your PyBullet adapter takes:
+
+scenario.json
+
+and creates:
+
+floor
+robot
+cup
+box
+human obstacle
+camera
+LiDAR rays
+reward loop
+
+Then it outputs:
+
+RGB images
+depth maps
+LiDAR-like point clouds
+object poses
+labels
+reward metrics
+success/failure result
+
+This is the MVP.
+
+Integration with ROS
+
+ROS is for robotics stacks.
+
+Your platform can export sensor data as ROS-style topics:
+
+/lidar/points
+/camera/rgb
+/camera/depth
+/tf
+/robot/pose
+/task/status
+
+Even if you do not create a real .bag file during the hackathon, you can export a ROS-style folder:
+
+ros_export/
+  lidar_points.jsonl
+  camera_frames/
+  depth_frames/
+  transforms.json
+  topic_manifest.json
+
+Pitch:
+
+“A robotics team could replay this as if it came from robot sensors.”
+
+Integration with OpenPCDet
+
+This is for 3D object detection.
+
+Your export:
+
+openpcdet/
+  points/
+    000001.npy
+  labels/
+    000001.txt
+  ImageSets/
+    train.txt
+
+Each label line:
+
+x y z dx dy dz heading class_name
+
+Example:
+
+2.5 0.3 0.2 0.5 0.5 0.4 0.0 Obstacle
+0.2 0.0 0.8 0.1 0.1 0.2 0.0 Cup
+
+Pitch:
+
+“This turns robot test cases into trainable perception data.”
+
+Integration with Isaac Sim / Isaac Lab
+
+Isaac is your serious future target.
+
+Your platform should export:
+
+isaac/
+  scene_config.yaml
+  task_config.json
+  assets/
+
+Eventually:
+
+scene.usd
+
+Pitch:
+
+“PyBullet is the MVP runner. Isaac is the high-fidelity backend.”
+
+Do not overbuild Isaac in the hackathon unless your team already knows it.
+
+Integration with CARLA
+
+Only relevant if you do self-driving car scenes.
+
+For CARLA, your scenario spec would map to:
+
+road layout
+vehicles
+pedestrians
+weather
+camera sensor
+LiDAR sensor
+ego vehicle route
+collision conditions
+
+But I would not make CARLA your main path unless your team is already comfortable with it.
+
+Integration with Nebius / Ultimate Bots
+
+This depends on what APIs they expose.
+
+Your integration should be framed as:
+
+FailureCloud generates:
+- task
+- hazards
+- success metric
+- reward function
+- sensor config
+- evaluation report
+
+Nebius/Ultimate Bots runs:
+- robot policy training
+- robot execution
+
+So the pitch is:
+
+“Nebius provides the physical AI workbench. FailureCloud provides the hard tasks and evaluation layer.”
+
+Even if you cannot fully integrate during the hackathon, you can export:
+
+nebius_task.json
+
+Example:
+
+{
+  "task_name": "slippery_cup_carry",
+  "robot": "humanoid_or_mobile_base",
+  "goal": "carry cup to target",
+  "hazards": ["slippery_floor", "dropped_obstacle"],
+  "success_metrics": {
+    "water_left_percent": 70,
+    "collisions": 0
+  },
+  "reward_function": {
+    "goal_progress": 1.0,
+    "spill_penalty": -0.5,
+    "collision_penalty": -10.0
+  }
+}
+
+That gives you a clean sponsor story.
+
+6. The full data flow
+
+Use this as your mental model:
+
+User prompt
+  ↓
+LLM scenario compiler
+  ↓
+scenario.json
+  ↓
+Scenario validator
+  ↓
+Preview renderer
+  ↓
+Simulator adapter
+  ↓
+PyBullet simulation
+  ↓
+Sensor recorder
+  ├── RGB
+  ├── depth
+  ├── LiDAR
+  ├── object poses
+  └── collisions
+  ↓
+Auto-labeler
+  ├── 3D boxes
+  ├── object classes
+  ├── trajectories
+  └── point labels
+  ↓
+Evaluator
+  ├── reward
+  ├── water left
+  ├── success/failure
+  └── failure explanation
+  ↓
+Exporters
+  ├── PyBullet
+  ├── ROS
+  ├── OpenPCDet
+  ├── Isaac
+  └── Nebius
+7. What to build for the hackathon
+
+Build this exact version:
+
+MVP
+Prompt → scenario.json → PyBullet simulation → RGB/depth/LiDAR preview → labels → success report → export folder
+
+Do not overbuild five simulator integrations.
+
+Actually build:
+
+1. Prompt-to-scenario
+2. PyBullet runner
+3. Sensor recorder
+4. Simple point cloud viewer
+5. Reward/success evaluator
+6. Export zip
+
+Fake/lightweight export support for:
+
+ROS-style folder
+OpenPCDet folder
+Isaac config JSON
+Nebius task JSON
+
+That is enough.
+
+8. The most important generated artifact
+
+Your most important generated artifact is not the point cloud.
+
+It is this:
+
+RobotTestCase
+
+A RobotTestCase includes:
+
+scenario
+environment
+robot
+objects
+sensors
+reward function
+success metric
+simulation outputs
+labels
+export formats
+
+That is the product.
+
+The point cloud, RGB image, depth map, labels, and reward graph are outputs of that test case.
+
+9. One-sentence explanation
+
+Use this:
+
+FailureCloud turns natural-language robot failure cases into executable simulation tests with sensor data, labels, rewards, and exportable artifacts for robotics and physical-AI tools.
+
+Even shorter:
+
+Unit tests for robots.
+
+That is the flow.
