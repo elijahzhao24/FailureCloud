@@ -137,6 +137,13 @@ def _apply_request_settings(
     scenario: ScenarioV01,
     request: TestGenerationRequest,
 ) -> ScenarioV01:
+    scenario.environment.type = request.environment
+    scenario.robot.type = request.robot_type
+    scenario.robot.asset_ref = (
+        request.custom_robot_asset_ref
+        if request.robot_type == "custom_urdf"
+        else f"primitive://{request.robot_type.replace('_', '-')}"
+    )
     scenario.sensors.rgb_camera.enabled = "rgb" in request.sensors
     scenario.sensors.depth_camera.enabled = "depth" in request.sensors
     scenario.sensors.lidar.enabled = "lidar" in request.sensors

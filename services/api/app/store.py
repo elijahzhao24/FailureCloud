@@ -30,6 +30,10 @@ class Store:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def robot_asset_dir(self, asset_id: str) -> Path:
+        path = self.artifact_root / "robot_assets" / asset_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 store = Store()
-

@@ -265,6 +265,8 @@ export default function ScenarioEditor() {
                   <span>Environment</span>
                   <select disabled value={scenario.environment.type}>
                     <option value="warehouse">Warehouse</option>
+                    <option value="loading_bay">Loading bay</option>
+                    <option value="white_test_floor">White test floor</option>
                   </select>
                   <small>Current supported domain</small>
                 </label>

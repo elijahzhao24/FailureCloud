@@ -11,6 +11,25 @@ from app.store import store
 
 client = TestClient(app)
 
+SIMPLE_ROBOT_URDF = b"""<?xml version="1.0"?>
+<robot name="failurecloud_test_robot">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="5"/>
+      <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.5 0.4 0.25"/></geometry>
+      <material name="mint"><color rgba="0.1 0.9 0.7 1"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="0.5 0.4 0.25"/></geometry>
+    </collision>
+  </link>
+</robot>
+"""
+
 
 def test_health_and_compile_contract():
     health = client.get("/health")
@@ -82,6 +101,36 @@ def test_generate_exact_failure_returns_one_direct_test():
     assert len(payload["suggestions"]) == 1
     assert payload["suggestions"][0]["difficulty"] == "hard"
     assert payload["suggestions"][0]["scenario"]["name"] == "Exact requested failure"
+
+
+def test_upload_custom_urdf_and_use_it_in_generated_scenario():
+    upload = client.post(
+        "/v1/assets/robots",
+        files={"file": ("test_robot.urdf", SIMPLE_ROBOT_URDF, "application/xml")},
+    )
+
+    assert upload.status_code == 200
+    asset = upload.json()
+    assert asset["format"] == "urdf"
+    assert asset["asset_ref"].startswith("asset://robots/")
+    assert client.get("/v1/assets/robots").json() == [asset]
+
+    generated = client.post(
+        "/v1/tests/generate",
+        json={
+            "task": "Carry a cup across an empty test floor.",
+            "robot_type": "custom_urdf",
+            "custom_robot_asset_ref": asset["asset_ref"],
+            "custom_robot_name": asset["name"],
+            "environment": "white_test_floor",
+        },
+    )
+
+    assert generated.status_code == 200
+    scenario = generated.json()["suggestions"][0]["scenario"]
+    assert scenario["robot"]["type"] == "custom_urdf"
+    assert scenario["robot"]["asset_ref"] == asset["asset_ref"]
+    assert scenario["environment"]["type"] == "white_test_floor"
 
 
 def test_harder_variant_increases_constraints_and_remains_valid():

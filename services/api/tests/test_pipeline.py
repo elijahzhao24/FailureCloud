@@ -154,6 +154,44 @@ def test_simulation_supports_static_hazard_scenario_without_dynamic_actor():
     assert frames["frame_count"] == 8
 
 
+def test_simulation_loads_uploaded_custom_urdf(tmp_path):
+    asset_id = "robot_pipeline"
+    package_dir = store.robot_asset_dir(asset_id) / "package"
+    package_dir.mkdir()
+    entrypoint = package_dir / "robot.urdf"
+    entrypoint.write_text(
+        """<?xml version="1.0"?>
+<robot name="pipeline_robot">
+  <link name="base">
+    <inertial>
+      <mass value="5"/>
+      <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+    </inertial>
+    <visual><geometry><box size="0.5 0.4 0.25"/></geometry></visual>
+    <collision><geometry><box size="0.5 0.4 0.25"/></geometry></collision>
+  </link>
+</robot>"""
+    )
+    scenario = compact_scenario()
+    scenario.robot.type = "custom_urdf"
+    scenario.robot.asset_ref = f"asset://robots/{asset_id}/robot.urdf"
+    scenario.environment.type = "white_test_floor"
+    manifest = RunManifest(
+        run_id="run_custom_robot",
+        status="queued",
+        scenario=scenario,
+    )
+    store.runs[manifest.run_id] = manifest
+
+    run_simulation(manifest.run_id)
+
+    run = store.runs[manifest.run_id]
+    assert run.status == "completed"
+    assert (
+        store.run_dir(manifest.run_id) / "assets/robot/robot.urdf"
+    ).is_file()
+
+
 def test_exports_are_consistent_and_bundle_is_downloadable():
     run = completed_run("run_exports")
     root = store.run_dir(run.run_id)

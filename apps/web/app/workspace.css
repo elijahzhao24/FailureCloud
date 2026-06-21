@@ -362,9 +362,116 @@ a.fc-workflow-step__content:hover {
   margin-top: 8px;
 }
 
-.fc-example-list {
+.fc-foundation-context {
+  border-bottom: 1px solid var(--fc-border);
   border-top: 1px solid var(--fc-border);
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1.25fr 1fr;
   margin: 16px 4px 0;
+}
+
+.fc-foundation-context > div {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  padding: 15px 0;
+}
+
+.fc-foundation-context > div + div {
+  border-left: 1px solid var(--fc-border);
+  grid-template-columns: 24px minmax(0, 1fr);
+  margin-left: 16px;
+  padding-left: 16px;
+}
+
+.fc-foundation-context__index {
+  align-self: center;
+  color: var(--fc-muted);
+  font-family: var(--fc-mono);
+  font-size: 9px;
+}
+
+.fc-foundation-context label > span {
+  color: var(--fc-copy);
+  display: block;
+  font-size: 10px;
+  font-weight: 550;
+  margin-bottom: 6px;
+}
+
+.fc-foundation-context select {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--fc-muted) 50%) calc(100% - 15px)
+      50% / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--fc-muted) 50%, transparent 50%)
+      calc(100% - 11px) 50% / 5px 5px no-repeat,
+    var(--fc-surface);
+  border: 1px solid var(--fc-border-strong);
+  border-radius: 9px;
+  color: var(--fc-ink);
+  font-size: 12px;
+  min-height: 39px;
+  outline: none;
+  padding: 0 32px 0 11px;
+  width: 100%;
+}
+
+.fc-foundation-context select:focus {
+  border-color: var(--fc-mint);
+  box-shadow: 0 0 0 3px var(--fc-mint-dim);
+}
+
+.fc-foundation-context p {
+  color: var(--fc-muted);
+  font-size: 9px;
+  grid-column: 2;
+  line-height: 1.35;
+  margin: 5px 0 0;
+}
+
+.fc-asset-upload {
+  align-items: flex-start;
+  background: var(--fc-surface-soft);
+  border: 1px dashed var(--fc-border-strong);
+  border-radius: 9px;
+  color: var(--fc-copy);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 39px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.fc-asset-upload:hover {
+  background: var(--fc-mint-dim);
+  border-color: var(--fc-mint);
+  color: var(--fc-mint-ink);
+}
+
+.fc-asset-upload:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.fc-asset-upload span {
+  font-size: 10px;
+  font-weight: 550;
+}
+
+.fc-asset-upload small {
+  color: var(--fc-muted);
+  font-family: var(--fc-mono);
+  font-size: 8px;
+  margin-top: 2px;
+}
+
+.fc-example-list {
+  margin: 14px 4px 0;
   padding-top: 14px;
 }
 

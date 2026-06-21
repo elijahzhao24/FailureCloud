@@ -1,10 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useRef,
+  useState,
+} from "react";
+import useSWR from "swr";
+import { apiFetch, fetcher } from "@/lib/api";
 import type {
   ExportName,
+  RobotAsset,
   SensorName,
   TestGenerationRequest,
   TestGenerationResponse,
@@ -32,6 +39,18 @@ const exportOptions: Array<{ value: ExportName; label: string }> = [
   { value: "isaac", label: "Isaac" },
   { value: "nebius", label: "Nebius" },
 ];
+
+const robotLabels = {
+  mobile_base: "Mobile robot",
+  delivery_cart: "Delivery cart",
+  custom_urdf: "Custom URDF",
+} as const;
+
+const environmentLabels = {
+  warehouse: "Warehouse aisle",
+  loading_bay: "Loading bay",
+  white_test_floor: "White test floor",
+} as const;
 
 const initialRequest: TestGenerationRequest = {
   task: "A warehouse robot carries a cup of water across the floor.",
@@ -64,12 +83,49 @@ export default function WorkspaceFoundation() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assetUploading, setAssetUploading] = useState(false);
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: robotAssets = [], mutate: refreshRobotAssets } = useSWR<
+    RobotAsset[]
+  >("/v1/assets/robots", fetcher);
 
   const exactMode = request.mode === "exact_failure";
   const ready =
     request.task.trim().length >= 8 &&
     request.sensors.length > 0 &&
-    request.export_targets.length > 0;
+    request.export_targets.length > 0 &&
+    (request.robot_type !== "custom_urdf" ||
+      Boolean(request.custom_robot_asset_ref));
+
+  async function uploadRobotAsset(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAssetUploading(true);
+    setAssetError(null);
+    const form = new FormData();
+    form.set("file", file);
+    try {
+      const asset = await apiFetch<RobotAsset>("/v1/assets/robots", {
+        method: "POST",
+        body: form,
+      });
+      await refreshRobotAssets();
+      setRequest((current) => ({
+        ...current,
+        robot_type: "custom_urdf",
+        custom_robot_asset_ref: asset.asset_ref,
+        custom_robot_name: asset.name,
+      }));
+    } catch (caught) {
+      setAssetError(
+        caught instanceof Error ? caught.message : "Robot upload failed.",
+      );
+    } finally {
+      setAssetUploading(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -170,6 +226,102 @@ export default function WorkspaceFoundation() {
             </span>
           </label>
 
+          <section className="fc-foundation-context" aria-label="Test context">
+            <div>
+              <span className="fc-foundation-context__index">01</span>
+              <label>
+                <span>Robot</span>
+                <select
+                  aria-label="Robot type"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "mobile_base" || value === "delivery_cart") {
+                      setRequest((current) => ({
+                        ...current,
+                        robot_type: value,
+                        custom_robot_asset_ref: null,
+                        custom_robot_name: null,
+                      }));
+                      return;
+                    }
+                    const asset = robotAssets.find(
+                      (item) => item.asset_ref === value,
+                    );
+                    if (asset) {
+                      setRequest((current) => ({
+                        ...current,
+                        robot_type: "custom_urdf",
+                        custom_robot_asset_ref: asset.asset_ref,
+                        custom_robot_name: asset.name,
+                      }));
+                    }
+                  }}
+                  value={
+                    request.robot_type === "custom_urdf"
+                      ? request.custom_robot_asset_ref ?? ""
+                      : request.robot_type
+                  }
+                >
+                  <option value="mobile_base">Mobile robot</option>
+                  <option value="delivery_cart">Delivery cart</option>
+                  {robotAssets.map((asset) => (
+                    <option key={asset.asset_id} value={asset.asset_ref}>
+                      {asset.name} · URDF
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="fc-asset-upload"
+                disabled={assetUploading}
+                onClick={() => fileInputRef.current?.click()}
+                type="button"
+              >
+                <span>{assetUploading ? "Uploading…" : "＋ Upload robot"}</span>
+                <small>URDF or ZIP</small>
+              </button>
+              <input
+                accept=".urdf,.zip"
+                aria-label="Upload robot URDF package"
+                hidden
+                onChange={uploadRobotAsset}
+                ref={fileInputRef}
+                type="file"
+              />
+            </div>
+            <div>
+              <span className="fc-foundation-context__index">02</span>
+              <label>
+                <span>Environment</span>
+                <select
+                  aria-label="Environment"
+                  onChange={(event) =>
+                    setRequest((current) => ({
+                      ...current,
+                      environment: event.target
+                        .value as TestGenerationRequest["environment"],
+                    }))
+                  }
+                  value={request.environment}
+                >
+                  <option value="warehouse">Warehouse aisle</option>
+                  <option value="loading_bay">Loading bay</option>
+                  <option value="white_test_floor">White test floor</option>
+                </select>
+              </label>
+              <p>
+                Sets the generated scene context and PyBullet floor treatment.
+              </p>
+            </div>
+          </section>
+
+          {assetError ? (
+            <div className="fc-form-error" role="alert">
+              <strong>Robot package was not accepted.</strong>
+              <span>{assetError}</span>
+            </div>
+          ) : null}
+
           <div className="fc-example-list">
             <span>Try an example</span>
             {examples.map((example) => (
@@ -197,29 +349,13 @@ export default function WorkspaceFoundation() {
               Advanced options
             </span>
             <span>
-              Mobile robot · Warehouse · {request.sensors.length} sensors
+              {robotLabels[request.robot_type]} ·{" "}
+              {environmentLabels[request.environment]} · {request.sensors.length} sensors
             </span>
           </button>
 
           {advancedOpen ? (
             <div className="fc-advanced">
-              <div className="fc-advanced__fixed">
-                <label>
-                  <span>Robot type</span>
-                  <select aria-label="Robot type" disabled value="mobile_base">
-                    <option value="mobile_base">Mobile robot</option>
-                  </select>
-                  <small>More robot types are coming later.</small>
-                </label>
-                <label>
-                  <span>Environment</span>
-                  <select aria-label="Environment" disabled value="warehouse">
-                    <option value="warehouse">Warehouse</option>
-                  </select>
-                  <small>Current simulation domain.</small>
-                </label>
-              </div>
-
               <fieldset>
                 <legend>Sensors</legend>
                 <div className="fc-option-grid">

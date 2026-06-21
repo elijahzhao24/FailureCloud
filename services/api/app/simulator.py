@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pybullet as p
 from PIL import Image, ImageDraw
 
 from .models import EpisodeSummary, FrameManifest, FrameRecord, ScenarioV01
+from .robot_assets import resolve_robot_asset
 from .store import store
 
 
@@ -32,6 +34,35 @@ def _create_box(
         baseVisualShapeIndex=visual,
         basePosition=position,
     )
+
+
+def _create_robot(scenario: ScenarioV01, run_dir: Path) -> tuple[int, float]:
+    position = scenario.robot.start_pose.position.list()
+    orientation = p.getQuaternionFromEuler([0, 0, scenario.robot.start_pose.yaw])
+    if scenario.robot.type == "custom_urdf":
+        source = resolve_robot_asset(scenario.robot.asset_ref)
+        package_root = next(
+            parent for parent in source.parents if parent.name == "package"
+        )
+        packaged_asset = run_dir / "assets" / "robot"
+        if packaged_asset.exists():
+            shutil.rmtree(packaged_asset)
+        shutil.copytree(package_root, packaged_asset)
+        entrypoint = packaged_asset / source.relative_to(package_root)
+        p.setAdditionalSearchPath(str(entrypoint.parent))
+        robot_id = p.loadURDF(
+            str(entrypoint),
+            basePosition=position,
+            baseOrientation=orientation,
+            useFixedBase=False,
+            flags=p.URDF_USE_INERTIA_FROM_FILE,
+        )
+        aabb = p.getAABB(robot_id)
+        cup_height = max(0.44, aabb[1][2] - position[2] + 0.12)
+        return robot_id, cup_height
+    if scenario.robot.type == "delivery_cart":
+        return _create_box([0.42, 0.3, 0.22], position, [0.12, 0.35, 0.92, 1]), 0.56
+    return _create_box([0.32, 0.26, 0.18], position, [0.1, 0.95, 0.88, 1]), 0.44
 
 
 def _set_run_state(
@@ -317,8 +348,15 @@ def run_simulation(run_id: str) -> None:
         p.setTimeStep(physics.time_step)
 
         floor_shape = p.createCollisionShape(p.GEOM_BOX, halfExtents=[6.0, 2.2, 0.04])
+        floor_colors = {
+            "warehouse": [0.16, 0.2, 0.22, 1],
+            "loading_bay": [0.24, 0.25, 0.24, 1],
+            "white_test_floor": [0.92, 0.92, 0.9, 1],
+        }
         floor_visual = p.createVisualShape(
-            p.GEOM_BOX, halfExtents=[6.0, 2.2, 0.04], rgbaColor=[0.16, 0.2, 0.22, 1]
+            p.GEOM_BOX,
+            halfExtents=[6.0, 2.2, 0.04],
+            rgbaColor=floor_colors[scenario.environment.type],
         )
         floor_id = p.createMultiBody(
             baseMass=0,
@@ -328,11 +366,7 @@ def run_simulation(run_id: str) -> None:
         )
         p.changeDynamics(floor_id, -1, lateralFriction=physics.floor_friction)
 
-        robot_id = _create_box(
-            [0.32, 0.26, 0.18],
-            scenario.robot.start_pose.position.list(),
-            [0.1, 0.95, 0.88, 1],
-        )
+        robot_id, cup_mount_height = _create_robot(scenario, run_dir)
         obstacle = next(
             (obj for obj in scenario.objects if obj.class_name == "obstacle"),
             None,
@@ -469,7 +503,7 @@ def run_simulation(run_id: str) -> None:
             tilt += math.sin(frame_index * 0.75) * slip * 3.0
             max_tilt = max(max_tilt, tilt)
             cup_position = robot_position + np.asarray(
-                [math.cos(yaw) * 0.1, math.sin(yaw) * 0.1, 0.44]
+                [math.cos(yaw) * 0.1, math.sin(yaw) * 0.1, cup_mount_height]
             )
             p.resetBasePositionAndOrientation(
                 cup_id,

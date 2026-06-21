@@ -162,31 +162,67 @@ function Warehouse({ scenario, mode }: { scenario: Scenario; mode: SchematicMode
   const goal = scenario.robot.goal_pose.position;
   const start = scenario.robot.start_pose.position;
   const lowFriction = scenario.environment.physics.floor_friction < 0.3;
+  const whiteTestFloor = scenario.environment.type === "white_test_floor";
+  const loadingBay = scenario.environment.type === "loading_bay";
 
   return (
     <>
-      <color attach="background" args={["#f4f4f1"]} />
+      <color attach="background" args={[whiteTestFloor ? "#fbfbf9" : "#f4f4f1"]} />
       <ambientLight intensity={2.5} />
       <directionalLight intensity={1.8} position={[5, 9, 4]} />
 
       <mesh receiveShadow position={[2.7, -0.06, 0]}>
         <boxGeometry args={[7.4, 0.1, 4.6]} />
-        <meshStandardMaterial color={floorColor} roughness={0.96} />
+        <meshStandardMaterial
+          color={whiteTestFloor ? "#f7f7f3" : loadingBay ? "#deded8" : floorColor}
+          roughness={0.96}
+        />
       </mesh>
-      <gridHelper
-        args={[7.2, 18, "#d1d1cb", "#ddddda"]}
-        position={[2.7, 0.005, 0]}
-      />
+      {!whiteTestFloor ? (
+        <gridHelper
+          args={[7.2, 18, "#d1d1cb", "#ddddda"]}
+          position={[2.7, 0.005, 0]}
+        />
+      ) : null}
 
-      {[-1.88, 1.88].map((z) => (
-        <group key={z}>
-          {[0.25, 1.7, 3.15, 4.6, 6.05].map((x) => (
-            <RoundedBox args={[1.05, 0.18, 0.38]} key={x} position={[x, 0.09, z]} radius={0.04}>
-              <meshStandardMaterial color="#cbc9c1" roughness={0.8} />
-            </RoundedBox>
+      {scenario.environment.type === "warehouse"
+        ? [-1.88, 1.88].map((z) => (
+            <group key={z}>
+              {[0.25, 1.7, 3.15, 4.6, 6.05].map((x) => (
+                <RoundedBox
+                  args={[1.05, 0.18, 0.38]}
+                  key={x}
+                  position={[x, 0.09, z]}
+                  radius={0.04}
+                >
+                  <meshStandardMaterial color="#cbc9c1" roughness={0.8} />
+                </RoundedBox>
+              ))}
+            </group>
+          ))
+        : null}
+
+      {loadingBay ? (
+        <>
+          {[-1.72, 1.72].map((z) => (
+            <group key={z}>
+              {[1.1, 4.6].map((x) => (
+                <RoundedBox
+                  args={[0.85, 0.42, 0.65]}
+                  key={x}
+                  position={[x, 0.21, z]}
+                  radius={0.03}
+                >
+                  <meshStandardMaterial color="#b9a98f" roughness={0.9} />
+                </RoundedBox>
+              ))}
+            </group>
           ))}
-        </group>
-      ))}
+          <RoundedBox args={[0.12, 0.8, 3.7]} position={[6.3, 0.4, 0]} radius={0.03}>
+            <meshStandardMaterial color="#c9cac6" roughness={0.85} />
+          </RoundedBox>
+        </>
+      ) : null}
 
       {lowFriction ? (
         <mesh position={[2.7, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>

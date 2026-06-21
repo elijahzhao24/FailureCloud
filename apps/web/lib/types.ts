@@ -8,7 +8,7 @@ export type Scenario = {
   domain: "warehouse_robotics";
   seed: number;
   environment: {
-    type: "warehouse";
+    type: "warehouse" | "loading_bay" | "white_test_floor";
     lighting: string;
     weather: string;
     physics: {
@@ -18,7 +18,7 @@ export type Scenario = {
     };
   };
   robot: {
-    type: "mobile_base";
+    type: "mobile_base" | "delivery_cart" | "custom_urdf";
     asset_ref: string;
     start_pose: Pose;
     goal_pose: Pose;
@@ -95,10 +95,21 @@ export type ExportName =
 export type TestGenerationRequest = {
   task: string;
   mode: "normal_task" | "exact_failure";
-  robot_type: "mobile_base";
-  environment: "warehouse";
+  robot_type: "mobile_base" | "delivery_cart" | "custom_urdf";
+  environment: "warehouse" | "loading_bay" | "white_test_floor";
+  custom_robot_asset_ref?: string | null;
+  custom_robot_name?: string | null;
   sensors: SensorName[];
   export_targets: ExportName[];
+};
+
+export type RobotAsset = {
+  asset_id: string;
+  name: string;
+  format: "urdf";
+  asset_ref: string;
+  entrypoint: string;
+  file_count: number;
 };
 
 export type RobotTestSuggestion = {

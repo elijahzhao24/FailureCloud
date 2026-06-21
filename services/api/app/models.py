@@ -27,14 +27,14 @@ class PhysicsConfig(BaseModel):
 
 
 class EnvironmentConfig(BaseModel):
-    type: Literal["warehouse"] = "warehouse"
+    type: Literal["warehouse", "loading_bay", "white_test_floor"] = "warehouse"
     lighting: str = "industrial_night"
     weather: str = "none"
     physics: PhysicsConfig = Field(default_factory=PhysicsConfig)
 
 
 class RobotConfig(BaseModel):
-    type: Literal["mobile_base"] = "mobile_base"
+    type: Literal["mobile_base", "delivery_cart", "custom_urdf"] = "mobile_base"
     asset_ref: str = "primitive://mobile-base"
     start_pose: Pose = Field(default_factory=Pose)
     goal_pose: Pose = Field(
@@ -165,8 +165,10 @@ class CompileResponse(BaseModel):
 class TestGenerationRequest(BaseModel):
     task: str = Field(min_length=8, max_length=2000)
     mode: Literal["normal_task", "exact_failure"] = "normal_task"
-    robot_type: Literal["mobile_base"] = "mobile_base"
-    environment: Literal["warehouse"] = "warehouse"
+    robot_type: Literal["mobile_base", "delivery_cart", "custom_urdf"] = "mobile_base"
+    environment: Literal["warehouse", "loading_bay", "white_test_floor"] = "warehouse"
+    custom_robot_asset_ref: str | None = None
+    custom_robot_name: str | None = None
     sensors: list[SensorName] = Field(
         default_factory=lambda: ["rgb", "depth", "lidar", "collision", "pose"],
         min_length=1,
@@ -181,6 +183,21 @@ class TestGenerationRequest(BaseModel):
         ],
         min_length=1,
     )
+
+    @model_validator(mode="after")
+    def custom_robot_requires_asset(self) -> "TestGenerationRequest":
+        if self.robot_type == "custom_urdf" and not self.custom_robot_asset_ref:
+            raise ValueError("A custom URDF asset must be uploaded first")
+        return self
+
+
+class RobotAsset(BaseModel):
+    asset_id: str
+    name: str
+    format: Literal["urdf"]
+    asset_ref: str
+    entrypoint: str
+    file_count: int
 
 
 class RobotTestSuggestion(BaseModel):

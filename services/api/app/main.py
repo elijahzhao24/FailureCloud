@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +19,7 @@ from .models import (
     CompileResponse,
     FrameManifest,
     ReactorTokenResponse,
+    RobotAsset,
     RunCreateRequest,
     RunManifest,
     ScenarioVariantRequest,
@@ -31,6 +33,7 @@ from .models import (
     VisualPreviewStatus,
 )
 from .nebius import nebius_status
+from .robot_assets import list_robot_assets, resolve_robot_asset, save_robot_asset
 from .simulator import refresh_lidar_previews, run_simulation
 from .store import store
 from .sweeps import create_sweep
@@ -76,7 +79,25 @@ def compile_scenario(request: CompileRequest) -> CompileResponse:
 
 @app.post("/v1/tests/generate", response_model=TestGenerationResponse)
 def generate_tests(request: TestGenerationRequest) -> TestGenerationResponse:
+    if request.custom_robot_asset_ref:
+        try:
+            resolve_robot_asset(request.custom_robot_asset_ref)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     return generate_test_suggestions(request)
+
+
+@app.get("/v1/assets/robots", response_model=list[RobotAsset])
+def get_robot_assets() -> list[RobotAsset]:
+    return list_robot_assets()
+
+
+@app.post("/v1/assets/robots", response_model=RobotAsset)
+async def upload_robot_asset(file: UploadFile = File(...)) -> RobotAsset:
+    try:
+        return await save_robot_asset(file)
+    except (ValueError, zipfile.BadZipFile) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/v1/scenarios/validate")
