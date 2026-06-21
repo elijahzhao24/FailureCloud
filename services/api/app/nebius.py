@@ -16,6 +16,7 @@ class NebiusStatus:
     credentials_file_exists: bool
     credentials_file_valid: bool
     cli_available: bool
+    profile: str
     job_image_configured: bool
     auth_ready: bool
     submission_ready: bool
@@ -50,6 +51,7 @@ def nebius_status() -> NebiusStatus:
     key_valid = bool(key_path and key_exists and _credentials_file_valid(key_path))
     cli_path = os.getenv("NEBIUS_CLI_PATH", "nebius").strip() or "nebius"
     cli_available = shutil.which(cli_path) is not None
+    profile = os.getenv("NEBIUS_PROFILE", "failurecloud").strip() or "failurecloud"
     job_image = os.getenv("NEBIUS_JOB_IMAGE", "").strip()
     auth_ready = bool(project_id and region and key_valid)
     submission_ready = bool(auth_ready and cli_available and job_image)
@@ -76,6 +78,7 @@ def nebius_status() -> NebiusStatus:
         credentials_file_exists=key_exists,
         credentials_file_valid=key_valid,
         cli_available=cli_available,
+        profile=profile,
         job_image_configured=bool(job_image),
         auth_ready=auth_ready,
         submission_ready=submission_ready,
