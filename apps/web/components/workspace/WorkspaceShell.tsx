@@ -50,7 +50,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           Local workspace
         </div>
         <nav className="fc-workspace__header-actions" aria-label="Workspace">
-          <Link href="/legacy">Legacy interface</Link>
           <button className="fc-icon-button" type="button" aria-label="Help">
             ?
           </button>
