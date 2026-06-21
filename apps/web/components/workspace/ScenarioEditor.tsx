@@ -785,9 +785,12 @@ export default function ScenarioEditor() {
           <strong>Inspect the test before running physics.</strong>
           <p>The schematic Three.js preview is the next checkpoint.</p>
         </div>
-        <button className="fc-button fc-button--secondary" disabled type="button">
-          Preview scene · next
-        </button>
+        <Link
+          className="fc-button fc-button--secondary"
+          href={`/app/tests/${encodeURIComponent(testId)}/preview`}
+        >
+          Preview scene <span aria-hidden="true">→</span>
+        </Link>
         <button className="fc-button fc-button--primary" disabled type="button">
           Run simulation
         </button>

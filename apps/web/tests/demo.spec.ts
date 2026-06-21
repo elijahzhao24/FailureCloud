@@ -130,6 +130,34 @@ test("moves from landing page through generated test selection", async ({
       }),
     });
   });
+  await page.route("**/v1/previews/reactor", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        preview_id: "preview-test",
+        status: "queued",
+        provider: "local_fallback",
+        media_url: null,
+        poster_url: null,
+        illustrative_only: true,
+        error: null,
+      }),
+    });
+  });
+  await page.route("**/v1/previews/reactor/preview-test", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        preview_id: "preview-test",
+        status: "completed",
+        provider: "local_fallback",
+        media_url: null,
+        poster_url: null,
+        illustrative_only: true,
+        error: null,
+      }),
+    });
+  });
 
   await page.goto("/");
   await expect(
@@ -183,6 +211,24 @@ test("moves from landing page through generated test selection", async ({
   await expect(
     page.getByRole("slider", { name: "Minimum water remaining" }),
   ).toHaveValue("82");
+  await page.getByRole("link", { name: /preview scene/i }).click();
+
+  await expect(page).toHaveURL(/\/app\/tests\/test-0\/preview$/);
+  await expect(
+    page.getByRole("heading", { name: /inspect the test before physics/i }),
+  ).toBeVisible();
+  await expect(page.locator(".fc-schematic-frame canvas")).toBeVisible();
+  await page.getByRole("tab", { name: "Sensor setup" }).click();
+  await expect(page.getByText("720 rays · 12m")).toBeVisible();
+  await page.getByRole("tab", { name: "Success logic" }).click();
+  await expect(page.getByText("water_left ≥ 82%")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /reactor cinematic preview/i }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /generate cinematic/i })
+    .click();
+  await expect(page.getByText("Local fallback preview ready")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Describe" }),
   ).toBeVisible();
