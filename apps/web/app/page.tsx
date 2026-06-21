@@ -1,6 +1,5 @@
-import FailureCloudApp from "@/components/FailureCloudApp";
+import LandingPage from "@/components/landing/LandingPage";
 
 export default function Home() {
-  return <FailureCloudApp />;
+  return <LandingPage />;
 }
-

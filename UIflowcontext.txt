@@ -1,0 +1,672 @@
+User describes a normal robot task OR exact failure case → platform generates edge-case test cases → user picks one → preview → run sim → see sensor outputs + success/failure → export.
+
+Core UX decision
+
+You should support two input modes, but make one the default.
+
+Default mode: “Generate edge cases from a normal task”
+
+This is the better product.
+
+User says:
+
+A robot needs to carry a cup of water across a warehouse floor.
+
+Your platform generates edge-case tests:
+
+1. Slippery floor
+2. Dropped box blocking path
+3. Human crossing aisle
+4. Low lighting
+5. Sudden turn causing cup spill
+
+This is valuable because the user may not know all the edge cases. Your platform helps them think like a robotics test engineer.
+
+Advanced mode: “Describe exact failure case”
+
+User says:
+
+Generate a slippery-floor scenario where the robot carries a cup, hits a dropped box, tilts the cup, and spills water.
+
+Then your platform directly creates that test.
+
+So the UI should say:
+
+What do you want to test?
+
+[ Describe a normal robot task ]
+[ Describe a specific edge case ]
+
+For the hackathon, default to normal task → generated edge cases. It feels more magical.
+
+What are you generating?
+
+You are generating a Robot Test Case Bundle.
+
+Not just a scene. Not just point clouds. The generated artifact is:
+
+RobotTestCase
+
+It contains:
+
+1. Scene
+2. Task
+3. Edge-case hazards
+4. Sensor setup
+5. Reward/evaluation function
+6. Success/failure criteria
+7. Simulation config
+8. Labels
+9. Export package
+
+So yes, you are generating scenes, but more specifically:
+
+executable robot test scenarios.
+
+And yes, you should generate reward/loss/success definitions, but call them:
+
+reward function
+success criteria
+failure criteria
+evaluation metrics
+
+“Loss function” sounds more like model training. For RL/control, “reward function” and “success metric” are cleaner.
+
+Full UX/UI flow
+Screen 1: Home / Generate
+
+Title:
+
+FailureCloud
+Unit tests for robots.
+
+Subtitle:
+
+Turn robot tasks into edge-case simulations with sensors, labels, rewards, and exportable test data.
+
+Main input:
+
+Describe a robot task or failure case...
+
+Example prompts under the input:
+
+A warehouse robot carries a cup of water across the floor.
+A delivery robot crosses a sidewalk with pedestrians and obstacles.
+A robot arm picks up a slippery object from a cluttered table.
+A self-driving car detects a stroller at night behind a parked van.
+
+Two toggles:
+
+Mode:
+(•) Generate edge cases from a normal task
+( ) Build my exact edge case
+
+Advanced options collapsed:
+
+Robot type: Mobile robot / Robot arm / Humanoid / Vehicle
+Environment: Warehouse / Street / Kitchen / Sidewalk
+Sensors: RGB / Depth / LiDAR / Collision / Pose
+Export target: PyBullet / ROS / OpenPCDet / Isaac / Nebius
+
+Button:
+
+Generate Robot Tests
+Screen 2: Edge Case Suggestions
+
+This is where the platform feels smart.
+
+After user enters:
+
+A robot carries a cup of water across a warehouse.
+
+Show generated test cards:
+
+Test 1: Slippery Floor Turn
+The robot must turn on a low-friction surface while keeping the cup stable.
+
+Test 2: Dropped Box Obstacle
+A box blocks the robot’s path, forcing a detour.
+
+Test 3: Human Crossing Aisle
+A pedestrian crosses the robot path mid-task.
+
+Test 4: Low Light + Reflective Floor
+The sensor stream becomes noisy due to dim lighting and reflections.
+
+Test 5: Sudden Stop Spill
+The robot brakes quickly near the goal, testing cup stability.
+
+Each card should show:
+
+Difficulty: Medium
+Sensors: RGB, Depth, LiDAR
+Success: reach goal with >70% water left
+Failure risk: spill / collision / timeout
+
+Buttons:
+
+[ Preview ]
+[ Edit ]
+[ Run ]
+
+This is probably your best UX moment.
+
+Screen 3: Scenario Editor
+
+When the user picks one test, show the generated structured scenario in a clean editor.
+
+Do not show raw JSON first. Show human-readable controls.
+
+Example:
+
+Scenario: Slippery Floor Cup Carry
+
+Environment
+- Warehouse
+- Floor friction: 0.25
+- Lighting: Normal
+
+Robot
+- Type: Mobile base
+- Start: [0, 0]
+- Goal: [5, 0]
+
+Objects
+- Cup of water
+- Dropped box obstacle
+- Goal zone
+
+Sensors
+- RGB camera
+- Depth camera
+- 720-ray LiDAR
+- Collision sensor
+
+Success Criteria
+- Goal reached: yes
+- Water left: at least 70%
+- Collisions: 0
+- Max time: 30 seconds
+
+Reward Function
+- + progress toward goal
+- - spill penalty
+- - collision penalty
+- + success bonus
+
+Buttons:
+
+[ Generate Harder Variant ]
+[ Preview Scene ]
+[ Run Simulation ]
+
+Include a small “View JSON” tab for engineers.
+
+Screen 4: Browser Preview
+
+Yes, you should provide a browser preview — but keep it realistic.
+
+Do not try to make a photorealistic simulation in the browser.
+
+The browser preview should be a clean schematic preview:
+
+top-down warehouse map
+robot start
+goal zone
+cup
+obstacle
+human path
+sensor cone / LiDAR rays
+planned path
+
+Use simple shapes:
+
+robot = small rounded rectangle
+cup = small blue circle
+box = orange cube
+goal = green square
+human path = dotted line
+LiDAR = faint circular rays
+
+This preview answers:
+
+“What test did we just generate?”
+
+It does not need real physics.
+
+The UI could have three preview tabs:
+
+Scene Layout
+Sensor Setup
+Success Logic
+Scene Layout tab
+
+Shows:
+
+robot → box obstacle → slippery zone → goal
+Sensor Setup tab
+
+Shows:
+
+camera cone
+LiDAR scan radius
+depth camera direction
+Success Logic tab
+
+Shows a simple formula:
+
+PASS if:
+- distance_to_goal < 0.3m
+- water_left_percent >= 70%
+- collisions == 0
+- time <= 30s
+
+This makes the test feel inspectable.
+
+Screen 5: Run Simulation
+
+When user clicks run, backend uses PyBullet.
+
+The UI should show progress:
+
+Compiling scenario...
+Building simulation...
+Running robot test...
+Recording sensors...
+Generating labels...
+Evaluating result...
+Packaging exports...
+
+Then show live/recorded results.
+
+Main layout:
+
+Left: simulation playback
+Right: metrics panel
+Bottom: timeline
+
+The playback can be simple:
+
+top-down PyBullet render
+or generated RGB frame
+or point cloud viewer
+
+Metrics panel:
+
+Water left: 82%
+Cup tilt: 13°
+Collisions: 0
+Distance to goal: 2.1m
+Reward: 34.2
+Status: Running
+
+Timeline:
+
+Frame 0       Frame 50       Frame 100
+|-------------|--------------|
+Screen 6: Results Dashboard
+
+After simulation, show pass/fail very clearly.
+
+Example:
+
+FAILED
+Robot reached the goal, but only 48% water remained.
+
+Then show:
+
+Water left: 48%
+Collisions: 0
+Max cup tilt: 31°
+Time: 18.4s
+Failure cause: high acceleration on slippery floor
+
+Tabs:
+
+Overview
+RGB
+Depth
+LiDAR
+Labels
+Reward
+Exports
+Overview tab
+
+Show final verdict.
+
+Result: FAILED
+Reason: Water left below threshold
+Threshold: 70%
+Actual: 48%
+RGB tab
+
+Show normal camera view.
+
+Depth tab
+
+Show grayscale/depth heatmap.
+
+LiDAR tab
+
+Show point cloud viewer.
+
+This should be clean, not overly fancy. A black background with white/colored points is enough.
+
+Example UI:
+
+LiDAR Point Cloud
+[ 3D viewer ]
+
+Points: 1,024
+Objects detected:
+- cup_1
+- box_1
+- floor
+- robot
+Labels tab
+
+Show generated labels:
+
+{
+  "frame": 42,
+  "objects": [
+    {
+      "id": "cup_1",
+      "class": "cup",
+      "position": [1.2, 0.4, 0.9],
+      "bbox_3d": [1.2, 0.4, 0.9, 0.1, 0.1, 0.2]
+    },
+    {
+      "id": "box_1",
+      "class": "obstacle",
+      "position": [2.5, 0.3, 0.2],
+      "bbox_3d": [2.5, 0.3, 0.2, 0.5, 0.5, 0.4]
+    }
+  ]
+}
+Reward tab
+
+Show simple graph:
+
+reward over time
+water left over time
+cup tilt over time
+
+This is important because it proves this is an evaluation tool, not just a visualizer.
+
+Screen 7: Export Flow
+
+The export flow should feel like:
+
+“Package this robot test for another tool.”
+
+Button:
+
+Export Test Case
+
+Then show export targets as cards.
+
+Export cards
+PyBullet Replay
+Replay this exact simulation locally.
+
+ROS-style Sensor Stream
+Use generated RGB, depth, LiDAR, and transforms like robot sensor data.
+
+OpenPCDet Dataset
+Train/evaluate a LiDAR 3D detector using generated point clouds and labels.
+
+Isaac Sim / Isaac Lab Config
+Use this scenario spec as a high-fidelity future backend.
+
+Nebius Physical AI Task
+Export task, reward, and success criteria for physical-AI workbench integration.
+
+Each card should show status:
+
+Ready
+Generated
+Experimental
+Coming soon
+
+For hackathon, use honest labels:
+
+PyBullet Replay: Ready
+ROS-style Folder: Ready
+OpenPCDet Export: Ready
+Isaac Config: Preview
+Nebius Manifest: Preview
+
+Do not claim full Isaac/Nebius integration unless you actually have it.
+
+What the export package looks like
+
+When user clicks export, generate:
+
+failurecloud_slippery_cup_test.zip
+
+Inside:
+
+scenario.json
+summary.md
+
+preview/
+  scene_preview.png
+  pointcloud_preview.png
+
+sensor_data/
+  rgb/
+    000000.png
+    000001.png
+  depth/
+    000000.npy
+    000001.npy
+  lidar/
+    000000.npy
+    000001.npy
+
+labels/
+  000000.json
+  000001.json
+
+eval/
+  reward_trace.json
+  success_metrics.json
+  failure_report.json
+
+exports/
+  pybullet/
+    run_sim.py
+    scenario.json
+
+  ros_style/
+    topic_manifest.json
+    lidar_points.jsonl
+    camera_rgb/
+    camera_depth/
+    transforms.json
+
+  openpcdet/
+    ImageSets/
+      train.txt
+    points/
+      000000.npy
+    labels/
+      000000.txt
+
+  isaac/
+    scenario_config.yaml
+
+  nebius/
+    task_manifest.yaml
+
+This is the tangible output.
+
+What should be generated vs user-controlled?
+
+Use this split:
+
+User provides
+base task
+robot type
+environment type
+optional exact edge case
+optional sensors
+optional export target
+Your model generates
+edge-case variants
+scene layout
+object positions
+hazards
+sensor configuration
+reward function
+success criteria
+failure criteria
+simulation parameters
+export manifests
+failure explanation
+User can edit
+difficulty
+hazards
+floor friction
+sensor count
+success threshold
+reward weights
+object placements
+export target
+
+This gives enough control without overwhelming them.
+
+Should the model generate success definitions?
+
+Yes. This is one of the most important parts.
+
+For the cup task, the model should generate:
+
+Success:
+- robot reaches goal
+- water_left_percent >= 70
+- collisions == 0
+- time <= 30 seconds
+
+Failure:
+- water_left_percent < 70
+- cup dropped
+- collision with obstacle
+- timeout
+
+Reward:
+
++ progress toward goal
+- spill amount
+- collision
+- excessive tilt
++ success bonus
+
+In the UI, show it as editable sliders:
+
+Minimum water left: [70%]
+Max collisions: [0]
+Timeout: [30s]
+Spill penalty: [-0.5]
+Collision penalty: [-10]
+Success bonus: [+20]
+
+This is a strong feature because most simulation platforms do not magically write your task/evaluator for you.
+
+Should you generate scenes?
+
+Yes, but phrase it carefully.
+
+You are not generating photoreal worlds from scratch.
+
+You are generating:
+
+structured scenes
+object layouts
+physics parameters
+sensor placements
+task configs
+
+For MVP:
+
+scene = simple procedural PyBullet world
+
+For future:
+
+scene = Isaac/CARLA/Gazebo/Cosmos-compatible config
+
+Say:
+
+“We generate executable scene specifications, not just images.”
+
+That is the right framing.
+
+Best final UI flow
+
+Use this exact flow:
+
+1. Describe Task
+2. Choose Edge Case
+3. Edit Test
+4. Preview Scene
+5. Run Simulation
+6. Inspect Results
+7. Export Bundle
+
+In the nav bar:
+
+Generate → Preview → Run → Results → Export
+Best demo path
+
+Use this one for your hackathon:
+
+Input
+A warehouse robot carries a cup of water across the floor.
+Platform generates edge cases
+Slippery floor
+Dropped box
+Human crossing
+Sudden stop
+Low-light sensor noise
+User selects
+Slippery floor + dropped box
+Platform generates
+Scene
+Sensor config
+Reward function
+Success criteria
+Preview
+
+Show clean top-down layout and LiDAR ring.
+
+Run
+
+Show PyBullet playback and point cloud.
+
+Results
+FAILED
+Water left: 48%
+Reason: cup tilted during sharp turn on low-friction floor
+Export
+PyBullet replay
+ROS-style sensor data
+OpenPCDet dataset
+Nebius task manifest
+Isaac config preview
+
+That is the cleanest end-to-end story.
+
+Final answer
+
+The UX should not start with “generate a point cloud.”
+
+It should start with:
+
+What robot task do you want to test?
+
+Then your platform says:
+
+Here are the dangerous edge cases. Pick one. I’ll generate the scene, sensors, labels, reward function, success criteria, run the sim, and export the test.
+
+That is the product.

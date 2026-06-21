@@ -1,0 +1,47 @@
+:root {
+  /* ── Shared accent ── */
+  --fc-mint: #6ee7b7;
+  --fc-mint-dim: rgb(110 231 183 / 12%);
+  --fc-mint-glow: rgb(110 231 183 / 22%);
+  --fc-mint-ink: #0d3d2a;
+
+  /* ── Semantic ── */
+  --fc-success: #22c55e;
+  --fc-warning: #d97706;
+  --fc-error: #ef4444;
+
+  /* ── Typography ── */
+  --fc-font: "Instrument Sans Variable", "Instrument Sans", system-ui, sans-serif;
+  --fc-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── Motion ── */
+  --fc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --fc-duration: 150ms;
+  --fc-duration-slow: 600ms;
+
+  /* ── Shape ── */
+  --fc-radius-sm: 12px;
+  --fc-radius-md: 16px;
+  --fc-radius-lg: 20px;
+  --fc-radius-pill: 999px;
+
+  /* ── Landing (dark) ── */
+  --fc-black: #050505;
+  --fc-black-soft: #0c0c0c;
+  --fc-black-elevated: #111110;
+  --fc-white: #f4f4f2;
+  --fc-gray-light: #a3a3a0;
+  --fc-gray-mid: #5c5c58;
+  --fc-gray-line: #222220;
+  --fc-gray-line-hi: #333330;
+
+  /* ── Workspace (light) ── */
+  --fc-bg: #f7f7f5;
+  --fc-surface: #ffffff;
+  --fc-surface-soft: #f2f2ef;
+  --fc-ink: #0a0a09;
+  --fc-copy: #4a4a47;
+  --fc-muted: #8a8a86;
+  --fc-border: #e4e4e0;
+  --fc-border-strong: #cacac4;
+}
