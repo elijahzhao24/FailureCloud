@@ -20,6 +20,7 @@ function activeStep(pathname: string): number {
   if (/^\/app\/tests\/[^/]+\/edit/.test(pathname)) return 2;
   if (/^\/app\/tests\/[^/]+\/preview/.test(pathname)) return 3;
   if (/^\/app\/runs\/[^/]+\/export/.test(pathname)) return 6;
+  if (/^\/app\/runs\/[^/]+\/results/.test(pathname)) return 5;
   if (/^\/app\/runs\/[^/]+/.test(pathname)) return 4;
   if (pathname.startsWith("/app/tests")) return 1;
   return 0;

@@ -288,13 +288,90 @@ test("moves from landing page through generated test selection", async ({
           rgb_url: `https://frames.failurecloud.test/rgb-${index}.svg`,
           depth_preview_url: `https://frames.failurecloud.test/depth-${index}.svg`,
           segmentation_preview_url: `https://frames.failurecloud.test/labels-${index}.svg`,
-          labels_url: `https://frames.failurecloud.test/${index}.json`,
+          lidar_preview_url: `https://frames.failurecloud.test/lidar-${index}.svg`,
+          labels_url: `/mock-labels/${index}.json`,
           lidar_points: 64,
           telemetry: item,
         })),
       }),
     });
   });
+  await page.route("**/mock-labels/*.json", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        frame_id: "000002",
+        timestamp_s: 1,
+        objects: [
+          {
+            instance_id: "cup_1",
+            class_name: "cup",
+            position_xyz: [5.4, 0, 0.66],
+            bbox_3d: [5.4, 0, 0.66, 0.16, 0.16, 0.22, 0],
+          },
+          {
+            instance_id: "box_1",
+            class_name: "obstacle",
+            position_xyz: [2.65, 0.18, 0.28],
+            bbox_3d: [2.65, 0.18, 0.28, 0.65, 0.75, 0.56, 0.12],
+          },
+        ],
+      }),
+    });
+  });
+  await page.route("**/v1/runs/run-test/exports", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "completed",
+        bundle_url: "/v1/runs/run-test/bundle",
+        file: "run-test.zip",
+      }),
+    });
+  });
+  await page.route("**/v1/runs/run-test/sweeps/nebius", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        sweep_id: "sweep-test",
+        run_id: "run-test",
+        status: "completed",
+        provider: "local_fallback",
+        specification: {
+          axes: [
+            { name: "floor_friction", values: [0.12, 0.2] },
+            { name: "robot_speed", values: [0.8, 1.2] },
+          ],
+        },
+        results: [],
+        success_rate: 0.5,
+        error: null,
+      }),
+    });
+  });
+  await page.route(
+    "**/v1/runs/run-test/sweeps/sweep-test",
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          sweep_id: "sweep-test",
+          run_id: "run-test",
+          status: "completed",
+          provider: "local_fallback",
+          specification: {
+            axes: [
+              { name: "floor_friction", values: [0.12, 0.2] },
+              { name: "robot_speed", values: [0.8, 1.2] },
+            ],
+          },
+          results: [],
+          success_rate: 0.5,
+          error: null,
+        }),
+      });
+    },
+  );
   await page.route("https://frames.failurecloud.test/*.svg", async (route) => {
     const depth = route.request().url().includes("depth");
     const labels = route.request().url().includes("labels");
@@ -361,9 +438,10 @@ test("moves from landing page through generated test selection", async ({
   await expect(
     page.getByRole("slider", { name: "Minimum water remaining" }),
   ).toHaveValue("82");
-  await page.getByRole("link", { name: /preview scene/i }).click();
-
-  await expect(page).toHaveURL(/\/app\/tests\/test-0\/preview$/);
+  await Promise.all([
+    page.waitForURL(/\/app\/tests\/test-0\/preview$/, { timeout: 15_000 }),
+    page.getByRole("link", { name: /preview scene/i }).click(),
+  ]);
   await expect(
     page.getByRole("heading", { name: /inspect the test before physics/i }),
   ).toBeVisible();
@@ -375,9 +453,7 @@ test("moves from landing page through generated test selection", async ({
   await expect(
     page.getByRole("heading", { name: /reactor cinematic preview/i }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: /generate cinematic/i })
-    .click();
+  await page.getByRole("button", { name: /use local fallback/i }).click();
   await expect(page.getByText("Local fallback preview ready")).toBeVisible();
   await page
     .getByRole("button", { name: "Run simulation →" })
@@ -393,6 +469,25 @@ test("moves from landing page through generated test selection", async ({
   await page.getByRole("button", { name: "Depth" }).click();
   await expect(page.getByAltText("depth simulation frame")).toBeVisible();
   await expect(page.getByText("FAILED")).toBeVisible();
+  await page.getByRole("link", { name: /review results/i }).click();
+  await expect(page).toHaveURL(/\/app\/runs\/run-test\/results$/);
+  await expect(
+    page.getByText("INSUFFICIENT_WATER_REMAINING"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "LiDAR" }).click();
+  await expect(page.getByAltText("lidar result frame")).toBeVisible();
+  await page.getByRole("button", { name: "Labels" }).click();
+  await expect(page.getByText("2 instances")).toBeVisible();
+  await page.getByRole("button", { name: "Reward" }).click();
+  await expect(
+    page.getByLabel("Reward, water, and cup tilt over time"),
+  ).toBeVisible();
+  await page.getByRole("link", { name: /export test case/i }).click();
+  await expect(page).toHaveURL(/\/app\/runs\/run-test\/export$/);
+  await page.getByRole("button", { name: /generate test bundle/i }).click();
+  await expect(page.getByRole("link", { name: /download zip/i })).toBeVisible();
+  await page.getByRole("button", { name: /launch stress test/i }).click();
+  await expect(page.getByText("50% success rate")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Describe" }),
   ).toBeVisible();

@@ -78,8 +78,16 @@ def test_simulation_writes_synchronized_sensor_bundle():
     segmentation_preview_files = sorted(
         (root / "sensor_data/seg_preview").glob("*.png")
     )
+    lidar_preview_files = sorted(
+        (root / "sensor_data/lidar_preview").glob("*.png")
+    )
     assert len(rgb_files) == len(depth_files) == len(seg_files) == len(lidar_files) == len(label_files) == 8
-    assert len(depth_preview_files) == len(segmentation_preview_files) == 8
+    assert (
+        len(depth_preview_files)
+        == len(segmentation_preview_files)
+        == len(lidar_preview_files)
+        == 8
+    )
 
     assert Image.open(rgb_files[0]).size == (96, 64)
     depth = np.load(depth_files[0])

@@ -265,6 +265,7 @@ class FrameRecord(BaseModel):
     rgb_url: str
     depth_preview_url: str
     segmentation_preview_url: str
+    lidar_preview_url: str
     labels_url: str
     lidar_points: int
     telemetry: dict[str, float | int | bool]

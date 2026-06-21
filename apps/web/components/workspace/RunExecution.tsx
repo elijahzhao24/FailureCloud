@@ -306,9 +306,12 @@ export default function RunExecution() {
             <strong>{verdict.label}</strong>
           </div>
           <p>{verdict.reason}</p>
-          <button className="fc-button fc-button--primary" disabled type="button">
-            Review results · next checkpoint
-          </button>
+          <Link
+            className="fc-button fc-button--primary"
+            href={`/app/runs/${encodeURIComponent(runId)}/results`}
+          >
+            Review results <span aria-hidden="true">→</span>
+          </Link>
         </section>
       ) : null}
     </div>

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pybullet as p
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .models import EpisodeSummary, FrameManifest, FrameRecord, ScenarioV01
 from .store import store
@@ -122,6 +122,52 @@ def _write_segmentation_preview(
     Image.fromarray(preview, mode="RGB").save(path)
 
 
+def _write_lidar_preview(path: Path, lidar: np.ndarray, range_m: float) -> None:
+    width, height = 720, 420
+    image = Image.new("RGB", (width, height), (7, 9, 9))
+    draw = ImageDraw.Draw(image)
+    center_x, center_y = width // 2, height // 2
+    scale = min(width, height) * 0.43 / max(range_m, 1.0)
+    colors = {
+        CLASS_IDS["floor"]: (76, 88, 86),
+        CLASS_IDS["mobile_base"]: (244, 244, 242),
+        CLASS_IDS["cup"]: (92, 175, 207),
+        CLASS_IDS["obstacle"]: (223, 123, 50),
+        CLASS_IDS["pedestrian"]: (220, 183, 70),
+    }
+    for radius_m in (2.0, 4.0, 6.0, 8.0, 10.0, 12.0):
+        radius = radius_m * scale
+        if radius > min(width, height) * 0.48:
+            break
+        draw.ellipse(
+            (
+                center_x - radius,
+                center_y - radius,
+                center_x + radius,
+                center_y + radius,
+            ),
+            outline=(29, 42, 40),
+            width=1,
+        )
+    draw.line((center_x, 18, center_x, height - 18), fill=(24, 35, 34), width=1)
+    draw.line((18, center_y, width - 18, center_y), fill=(24, 35, 34), width=1)
+    for row in lidar:
+        x, y, _, intensity, semantic_id, _ = row
+        px = int(center_x + float(x) * scale)
+        py = int(center_y - float(y) * scale)
+        if not (2 <= px < width - 2 and 2 <= py < height - 2):
+            continue
+        base = colors.get(int(semantic_id), (110, 231, 183))
+        alpha = max(0.35, min(1.0, float(intensity)))
+        color = tuple(int(channel * alpha) for channel in base)
+        draw.ellipse((px - 2, py - 2, px + 2, py + 2), fill=color)
+    draw.ellipse(
+        (center_x - 5, center_y - 5, center_x + 5, center_y + 5),
+        fill=(110, 231, 183),
+    )
+    image.save(path)
+
+
 def _capture_camera(
     robot_position: np.ndarray, width: int, height: int, fov: float, near: float, far: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -231,6 +277,7 @@ def run_simulation(run_id: str) -> None:
         "sensor_data/seg",
         "sensor_data/seg_preview",
         "sensor_data/lidar",
+        "sensor_data/lidar_preview",
         "labels",
         "eval",
         "calib",
@@ -470,6 +517,11 @@ def run_simulation(run_id: str) -> None:
                 lidar_cfg.height_m,
             )
             np.save(run_dir / "sensor_data/lidar" / f"{frame_id}.npy", lidar)
+            _write_lidar_preview(
+                run_dir / "sensor_data/lidar_preview" / f"{frame_id}.png",
+                lidar,
+                lidar_cfg.range_m,
+            )
             _write_frame_labels(
                 run_dir / "labels" / f"{frame_id}.json",
                 frame_id,
@@ -504,6 +556,10 @@ def run_simulation(run_id: str) -> None:
                     ),
                     segmentation_preview_url=(
                         f"/artifacts/runs/{run_id}/sensor_data/seg_preview/"
+                        f"{frame_id}.png"
+                    ),
+                    lidar_preview_url=(
+                        f"/artifacts/runs/{run_id}/sensor_data/lidar_preview/"
                         f"{frame_id}.png"
                     ),
                     labels_url=f"/artifacts/runs/{run_id}/labels/{frame_id}.json",

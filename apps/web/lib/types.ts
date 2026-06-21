@@ -173,6 +173,7 @@ export type FrameRecord = {
   rgb_url: string;
   depth_preview_url: string;
   segmentation_preview_url: string;
+  lidar_preview_url: string;
   labels_url: string;
   lidar_points: number;
   telemetry: {

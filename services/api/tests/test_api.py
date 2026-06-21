@@ -140,3 +140,4 @@ def test_completed_run_exposes_browser_frame_manifest():
     assert payload["width"] == 96
     assert payload["frames"][0]["depth_preview_url"].endswith(".png")
     assert payload["frames"][0]["segmentation_preview_url"].endswith(".png")
+    assert payload["frames"][0]["lidar_preview_url"].endswith(".png")

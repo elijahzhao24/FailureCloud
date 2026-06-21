@@ -26,6 +26,10 @@ const ScenarioSchematic = dynamic(() => import("./ScenarioSchematic"), {
     </div>
   ),
 });
+const ReactorCinematicSession = dynamic(
+  () => import("./ReactorCinematicSession"),
+  { ssr: false },
+);
 
 type PreviewTab = "layout" | "sensors" | "success";
 
@@ -151,6 +155,7 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
   const { data } = useSWR<VisualPreviewStatus>(
     previewId ? `/v1/previews/reactor/${previewId}` : null,
     fetcher,
@@ -160,9 +165,10 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
     },
   );
 
-  async function launch() {
+  async function launchFallback() {
     setLaunching(true);
     setLaunchError(null);
+    setLive(false);
     try {
       const response = await apiFetch<VisualPreviewStatus>(
         "/v1/previews/reactor",
@@ -184,6 +190,21 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
   const imageUrl = apiAsset(data?.media_url ?? data?.poster_url);
   const working =
     launching || data?.status === "queued" || data?.status === "generating";
+  const prompt = [
+    "Cinematic warehouse robotics safety visualization.",
+    `A compact mobile robot carries a cup of water from x ${suggestion.scenario.robot.start_pose.position.x.toFixed(1)}`,
+    `to x ${suggestion.scenario.robot.goal_pose.position.x.toFixed(1)}.`,
+    `Floor friction ${suggestion.scenario.environment.physics.floor_friction.toFixed(2)}.`,
+    suggestion.scenario.objects.some((item) => item.class === "obstacle")
+      ? "A dropped orange box obstructs the route."
+      : "",
+    suggestion.scenario.dynamic_actors.length
+      ? "A warehouse worker crosses the aisle."
+      : "",
+    "Clean realistic industrial lighting, slow tracking camera, no text, no logos.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <section className="fc-reactor-card">
@@ -196,19 +217,42 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
             geometry, physics, labels, or evaluation metrics.
           </p>
         </div>
-        {!previewId ? (
-          <button
-            className="fc-button fc-button--secondary"
-            disabled={launching}
-            onClick={launch}
-            type="button"
-          >
-            {launching ? "Starting…" : "Generate cinematic"}
-          </button>
-        ) : null}
+        <div className="fc-reactor-card__actions">
+          {!live ? (
+            <button
+              className="fc-button fc-button--secondary"
+              onClick={() => {
+                setLaunchError(null);
+                setLive(true);
+              }}
+              type="button"
+            >
+              Start live Reactor
+            </button>
+          ) : null}
+          {!previewId && !live ? (
+            <button
+              disabled={launching}
+              onClick={launchFallback}
+              type="button"
+            >
+              {launching ? "Generating fallback…" : "Use local fallback"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="fc-reactor-card__media">
-        {imageUrl ? (
+        {live ? (
+          <ReactorCinematicSession
+            onError={(message) => {
+              setLaunchError(message);
+              setLive(false);
+              void launchFallback();
+            }}
+            onStop={() => setLive(false)}
+            prompt={prompt}
+          />
+        ) : imageUrl ? (
           <img alt="Illustrative Reactor warehouse preview" src={imageUrl} />
         ) : (
           <div className="fc-reactor-placeholder">
