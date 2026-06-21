@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import html
-import json
 import os
 import threading
 from pathlib import Path
 
 import httpx
 
-from .models import ScenarioV01, VisualPreviewStatus
+from .models import ReactorTokenResponse, ScenarioV01, VisualPreviewStatus
 from .store import store
 
 
@@ -57,7 +56,7 @@ def create_preview(scenario: ScenarioV01) -> VisualPreviewStatus:
         status = VisualPreviewStatus(
             preview_id=preview_id,
             status="queued",
-            provider="reactor" if os.getenv("REACTOR_API_URL") else "local_fallback",
+            provider="reactor" if os.getenv("REACTOR_API_KEY") else "local_fallback",
         )
         store.previews[preview_id] = status
         _preview_cache[scenario_key] = preview_id
@@ -73,48 +72,14 @@ def _generate_preview(preview_id: str, scenario: ScenarioV01) -> None:
     target_dir = store.preview_dir(preview_id)
     poster_path = target_dir / "cinematic-preview.svg"
     try:
-        api_url = os.getenv("REACTOR_API_URL")
         api_key = os.getenv("REACTOR_API_KEY")
-        if api_url and api_key:
-            prompt = (
-                "Cinematic industrial warehouse robotics test. A compact cyan mobile "
-                "robot carries a cup around an orange dropped box on a visibly wet floor "
-                "while a worker crosses the aisle. Technical, realistic, no text overlays."
-            )
-            response = httpx.post(
-                api_url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "prompt": prompt,
-                    "scenario": scenario.model_dump(by_alias=True),
-                    "duration_seconds": 5,
-                    "aspect_ratio": "16:9",
-                },
-                timeout=45,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            media_url = payload.get("media_url") or payload.get("output_url")
-            if not media_url:
-                raise ValueError("Reactor response did not contain a media URL")
+        if api_key:
             _fallback_poster(poster_path, scenario)
             with store.lock:
                 current = store.previews[preview_id]
                 current.status = "completed"
                 current.provider = "reactor"
-                current.media_url = media_url
                 current.poster_url = f"/artifacts/previews/{preview_id}/{poster_path.name}"
-            (target_dir / "normalized-response.json").write_text(
-                json.dumps(
-                    {
-                        "preview_id": preview_id,
-                        "provider": "reactor",
-                        "media_url": media_url,
-                        "illustrative_only": True,
-                    },
-                    indent=2,
-                )
-            )
             return
 
         _fallback_poster(poster_path, scenario)
@@ -134,3 +99,21 @@ def _generate_preview(preview_id: str, scenario: ScenarioV01) -> None:
             current.poster_url = current.media_url
             current.error = f"Reactor unavailable; generated local cinematic fallback: {exc}"
 
+
+def create_reactor_token(expires_after: int = 900) -> ReactorTokenResponse:
+    api_key = os.getenv("REACTOR_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("Reactor API key is not configured")
+    api_url = os.getenv("REACTOR_API_URL", "https://api.reactor.inc").rstrip("/")
+    response = httpx.post(
+        f"{api_url}/tokens",
+        headers={
+            "Reactor-API-Key": api_key,
+            "Content-Type": "application/json",
+        },
+        json={"expires_after": min(max(expires_after, 60), 3600)},
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return ReactorTokenResponse.model_validate(payload)

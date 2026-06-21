@@ -16,6 +16,7 @@ from .exports import generate_exports
 from .models import (
     CompileRequest,
     CompileResponse,
+    ReactorTokenResponse,
     RunCreateRequest,
     RunManifest,
     SweepCreateRequest,
@@ -28,7 +29,7 @@ from .nebius import nebius_status
 from .simulator import run_simulation
 from .store import store
 from .sweeps import create_sweep
-from .vendors import create_preview
+from .vendors import create_preview, create_reactor_token
 
 
 app = FastAPI(
@@ -143,6 +144,18 @@ def get_reactor_preview(preview_id: str) -> VisualPreviewStatus:
         if preview_id not in store.previews:
             raise HTTPException(status_code=404, detail="Preview not found")
         return store.previews[preview_id]
+
+
+@app.post("/v1/integrations/reactor/token", response_model=ReactorTokenResponse)
+def reactor_token() -> ReactorTokenResponse:
+    try:
+        return create_reactor_token()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail="Reactor token exchange failed"
+        ) from exc
 
 
 @app.post("/v1/runs/{run_id}/sweeps/nebius", response_model=SweepSummary)

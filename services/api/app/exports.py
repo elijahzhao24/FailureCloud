@@ -123,7 +123,17 @@ def _manifest_exports(run_dir: Path, manifest: RunManifest) -> None:
             {
                 "name": f"failurecloud-{manifest.run_id}",
                 "image": "YOUR_REGISTRY/failurecloud-worker:latest",
-                "command": ["python", "-m", "app.sweep_worker"],
+                "command": [
+                    "python",
+                    "-m",
+                    "app.sweep_worker",
+                    "--scenario",
+                    "/work/input/scenario.json",
+                    "--specification",
+                    "/work/input/sweep.json",
+                    "--output",
+                    "/work/output/results.json",
+                ],
                 "inputs": {"scenario": "scenario.json", "sweep": "sweep.json"},
                 "outputs": {"results": "results.json"},
                 "resources": {"cpu": 4, "memory_gib": 8},
@@ -162,4 +172,3 @@ def generate_exports(run_id: str) -> Path:
     with store.lock:
         store.runs[run_id].artifacts["bundle"] = f"/v1/runs/{run_id}/bundle"
     return zip_path
-

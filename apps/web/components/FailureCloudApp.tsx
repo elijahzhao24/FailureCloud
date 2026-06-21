@@ -17,6 +17,9 @@ const ScenePreview = dynamic(() => import("./ScenePreview"), {
   ssr: false,
   loading: () => <div className="scene-loading">INITIALIZING WORLD VIEW…</div>,
 });
+const ReactorLivePreview = dynamic(() => import("./ReactorLivePreview"), {
+  ssr: false,
+});
 
 const DEFAULT_PROMPT =
   "Generate a warehouse robot test where a mobile robot must carry a cup of water across a slippery floor while avoiding a dropped box and a human crossing the aisle.";
@@ -404,7 +407,12 @@ export default function FailureCloudApp() {
                 </div>
               </div>
               <div className="cinematic-media">
-                {preview?.media_url ? (
+                {preview?.status === "completed" && preview.provider === "reactor" ? (
+                  <ReactorLivePreview
+                    prompt={`Cinematic industrial warehouse robotics test. ${prompt}`}
+                    posterUrl={apiAsset(preview.poster_url)}
+                  />
+                ) : preview?.media_url ? (
                   preview.media_url.endsWith(".mp4") ? (
                     <video controls autoPlay muted loop poster={apiAsset(preview.poster_url)}>
                       <source src={apiAsset(preview.media_url)} />
@@ -576,4 +584,3 @@ export default function FailureCloudApp() {
     </main>
   );
 }
-

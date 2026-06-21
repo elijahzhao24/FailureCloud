@@ -205,6 +205,11 @@ class VisualPreviewStatus(BaseModel):
     error: str | None = None
 
 
+class ReactorTokenResponse(BaseModel):
+    jwt: str
+    expires_at: int
+
+
 class SweepAxis(BaseModel):
     name: Literal[
         "floor_friction", "robot_speed", "obstacle_offset", "human_crossing_speed"
