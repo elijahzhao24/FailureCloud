@@ -158,6 +158,156 @@ test("moves from landing page through generated test selection", async ({
       }),
     });
   });
+  await page.route("**/v1/runs", async (route) => {
+    const request = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_id: "run-test",
+        status: "completed",
+        phase: "completed",
+        progress: 1,
+        scenario: request.scenario,
+        latest_telemetry: {
+          frame: 2,
+          time_s: 1,
+          progress: 1,
+          water_left_percent: 61.5,
+          cup_tilt_deg: 29.4,
+          collisions: 0,
+          distance_to_goal_m: 0,
+          reward: -2.1,
+          goal_reached: true,
+        },
+        summary: {
+          success: false,
+          failure_code: "INSUFFICIENT_WATER_REMAINING",
+          failure_reason:
+            "Robot reached the goal, but only 61.5% water remained.",
+          goal_reached: true,
+          water_left_percent: 61.5,
+          collisions: 0,
+          max_cup_tilt_deg: 29.4,
+          total_reward: -2.1,
+          duration_s: 1,
+          frame_count: 3,
+        },
+        artifacts: {},
+        error: null,
+      }),
+    });
+  });
+  await page.route("**/v1/runs/run-test", async (route) => {
+    const editedScenario = scenario("Slippery Floor Turn — harder", 0);
+    editedScenario.task.success.min_water_left_percent = 82;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_id: "run-test",
+        status: "completed",
+        phase: "completed",
+        progress: 1,
+        scenario: editedScenario,
+        latest_telemetry: {
+          frame: 2,
+          time_s: 1,
+          progress: 1,
+          water_left_percent: 61.5,
+          cup_tilt_deg: 29.4,
+          collisions: 0,
+          distance_to_goal_m: 0,
+          reward: -2.1,
+          goal_reached: true,
+        },
+        summary: {
+          success: false,
+          failure_code: "INSUFFICIENT_WATER_REMAINING",
+          failure_reason:
+            "Robot reached the goal, but only 61.5% water remained.",
+          goal_reached: true,
+          water_left_percent: 61.5,
+          collisions: 0,
+          max_cup_tilt_deg: 29.4,
+          total_reward: -2.1,
+          duration_s: 1,
+          frame_count: 3,
+        },
+        artifacts: {},
+        error: null,
+      }),
+    });
+  });
+  await page.route("**/v1/runs/run-test/frames", async (route) => {
+    const telemetry = [
+      {
+        frame: 0,
+        time_s: 0,
+        progress: 0,
+        water_left_percent: 100,
+        cup_tilt_deg: 8,
+        collisions: 0,
+        distance_to_goal_m: 5.4,
+        reward: 0,
+        goal_reached: false,
+      },
+      {
+        frame: 1,
+        time_s: 0.5,
+        progress: 0.5,
+        water_left_percent: 79.2,
+        cup_tilt_deg: 21.8,
+        collisions: 0,
+        distance_to_goal_m: 2.6,
+        reward: -0.8,
+        goal_reached: false,
+      },
+      {
+        frame: 2,
+        time_s: 1,
+        progress: 1,
+        water_left_percent: 61.5,
+        cup_tilt_deg: 29.4,
+        collisions: 0,
+        distance_to_goal_m: 0,
+        reward: -2.1,
+        goal_reached: true,
+      },
+    ];
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_id: "run-test",
+        frame_count: 3,
+        capture_rate_hz: 2,
+        width: 480,
+        height: 270,
+        frames: telemetry.map((item, index) => ({
+          frame_id: String(index).padStart(6, "0"),
+          index,
+          timestamp_s: item.time_s,
+          rgb_url: `https://frames.failurecloud.test/rgb-${index}.svg`,
+          depth_preview_url: `https://frames.failurecloud.test/depth-${index}.svg`,
+          segmentation_preview_url: `https://frames.failurecloud.test/labels-${index}.svg`,
+          labels_url: `https://frames.failurecloud.test/${index}.json`,
+          lidar_points: 64,
+          telemetry: item,
+        })),
+      }),
+    });
+  });
+  await page.route("https://frames.failurecloud.test/*.svg", async (route) => {
+    const depth = route.request().url().includes("depth");
+    const labels = route.request().url().includes("labels");
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270">
+        <rect width="480" height="270" fill="${depth ? "#b8b8b2" : labels ? "#df7b32" : "#172126"}"/>
+        <path d="M40 220 C160 180 300 190 440 80" fill="none" stroke="#6ee7b7" stroke-width="6"/>
+        <rect x="220" y="110" width="70" height="62" fill="#df7b32"/>
+        <circle cx="390" cy="85" r="26" fill="#6ee7b7"/>
+      </svg>`,
+    });
+  });
 
   await page.goto("/");
   await expect(
@@ -229,6 +379,20 @@ test("moves from landing page through generated test selection", async ({
     .getByRole("button", { name: /generate cinematic/i })
     .click();
   await expect(page.getByText("Local fallback preview ready")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Run simulation →" })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/app\/runs\/run-test$/);
+  await expect(
+    page.getByRole("heading", { name: /recorded simulation ready/i }),
+  ).toBeVisible();
+  await expect(page.getByAltText("rgb simulation frame")).toBeVisible();
+  await page.getByLabel("Simulation timeline").fill("2");
+  await expect(page.getByText("61.50%")).toBeVisible();
+  await page.getByRole("button", { name: "Depth" }).click();
+  await expect(page.getByAltText("depth simulation frame")).toBeVisible();
+  await expect(page.getByText("FAILED")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Describe" }),
   ).toBeVisible();

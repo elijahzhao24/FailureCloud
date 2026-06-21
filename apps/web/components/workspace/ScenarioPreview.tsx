@@ -2,16 +2,18 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { apiAsset, apiFetch, fetcher } from "@/lib/api";
 import type {
   RobotTestSuggestion,
+  RunManifest,
   VisualPreviewStatus,
 } from "@/lib/types";
 import {
   loadWorkspaceSession,
+  saveRunForTest,
   saveSelectedTest,
 } from "@/lib/workspace-session";
 
@@ -257,10 +259,13 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
 
 export default function ScenarioPreview() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const testId = decodeURIComponent(params.id);
   const [suggestion, setSuggestion] = useState<RobotTestSuggestion | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<PreviewTab>("layout");
+  const [runPending, setRunPending] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
 
   useEffect(() => {
     const session = loadWorkspaceSession();
@@ -287,6 +292,25 @@ export default function ScenarioPreview() {
       { label: "Dynamic actors", value: String(scenario.dynamic_actors.length) },
     ];
   }, [suggestion]);
+
+  async function startRun() {
+    if (!suggestion || runPending) return;
+    setRunPending(true);
+    setRunError(null);
+    try {
+      const run = await apiFetch<RunManifest>("/v1/runs", {
+        method: "POST",
+        body: JSON.stringify({ scenario: suggestion.scenario }),
+      });
+      saveRunForTest(testId, run.run_id);
+      router.push(`/app/runs/${encodeURIComponent(run.run_id)}`);
+    } catch (error) {
+      setRunError(
+        error instanceof Error ? error.message : "Simulation could not start.",
+      );
+      setRunPending(false);
+    }
+  }
 
   if (!loaded) {
     return (
@@ -336,8 +360,13 @@ export default function ScenarioPreview() {
           >
             ← Edit scenario
           </Link>
-          <button className="fc-button fc-button--primary" disabled type="button">
-            Run simulation · next
+          <button
+            className="fc-button fc-button--primary"
+            disabled={runPending}
+            onClick={startRun}
+            type="button"
+          >
+            {runPending ? "Starting simulation…" : "Run simulation →"}
           </button>
         </div>
       </div>
@@ -438,14 +467,26 @@ export default function ScenarioPreview() {
 
       <ReactorPreview suggestion={suggestion} />
 
+      {runError ? (
+        <div className="fc-form-error" role="alert">
+          <strong>Simulation could not start.</strong>
+          <span>{runError}</span>
+        </div>
+      ) : null}
+
       <div className="fc-editor-footer">
         <div>
           <span className="fc-kicker">Next stage</span>
           <strong>Run the deterministic PyBullet test.</strong>
           <p>Recorded playback and synchronized telemetry are next.</p>
         </div>
-        <button className="fc-button fc-button--primary" disabled type="button">
-          Run simulation · next checkpoint
+        <button
+          className="fc-button fc-button--primary"
+          disabled={runPending}
+          onClick={startRun}
+          type="button"
+        >
+          {runPending ? "Starting simulation…" : "Run simulation →"}
         </button>
       </div>
     </div>

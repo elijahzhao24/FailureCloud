@@ -16,6 +16,7 @@ from .exports import generate_exports
 from .models import (
     CompileRequest,
     CompileResponse,
+    FrameManifest,
     ReactorTokenResponse,
     RunCreateRequest,
     RunManifest,
@@ -110,6 +111,20 @@ def get_run(run_id: str) -> RunManifest:
         if run_id not in store.runs:
             raise HTTPException(status_code=404, detail="Run not found")
         return store.runs[run_id]
+
+
+@app.get("/v1/runs/{run_id}/frames", response_model=FrameManifest)
+def get_run_frames(run_id: str) -> FrameManifest:
+    with store.lock:
+        manifest = store.runs.get(run_id)
+        if manifest is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if manifest.status != "completed":
+            raise HTTPException(status_code=409, detail="Run frames are not ready")
+    path = store.run_dir(run_id) / "frames.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Frame manifest not found")
+    return FrameManifest.model_validate_json(path.read_text())
 
 
 @app.get("/v1/runs/{run_id}/events")

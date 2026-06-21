@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.compiler import compile_prompt
 from app.main import app
+from app.models import RunManifest
+from app.simulator import run_simulation
+from app.store import store
 
 
 client = TestClient(app)
@@ -113,3 +117,26 @@ def test_harder_variant_increases_constraints_and_remains_valid():
         variant["task"]["success"]["min_water_left_percent"]
         > original["task"]["success"]["min_water_left_percent"]
     )
+
+
+def test_completed_run_exposes_browser_frame_manifest():
+    scenario = compile_prompt("A warehouse robot carries water around a box.").scenario
+    scenario.task.termination.timeout_s = 1.0
+    scenario.sensors.capture_rate_hz = 2.0
+    scenario.sensors.rgb_camera.width = 96
+    scenario.sensors.rgb_camera.height = 64
+    scenario.sensors.depth_camera.width = 96
+    scenario.sensors.depth_camera.height = 64
+    scenario.sensors.lidar.num_rays = 64
+    run = RunManifest(run_id="run_frames_api", status="queued", scenario=scenario)
+    store.runs[run.run_id] = run
+    run_simulation(run.run_id)
+
+    response = client.get(f"/v1/runs/{run.run_id}/frames")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["frame_count"] == 8
+    assert payload["width"] == 96
+    assert payload["frames"][0]["depth_preview_url"].endswith(".png")
+    assert payload["frames"][0]["segmentation_preview_url"].endswith(".png")

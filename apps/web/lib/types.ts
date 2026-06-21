@@ -147,12 +147,54 @@ export type EpisodeSummary = {
 export type RunManifest = {
   run_id: string;
   status: "queued" | "running" | "completed" | "failed";
+  phase:
+    | "queued"
+    | "compiling_scenario"
+    | "building_simulation"
+    | "running_robot_test"
+    | "recording_sensors"
+    | "generating_labels"
+    | "evaluating_result"
+    | "packaging_artifacts"
+    | "completed"
+    | "failed";
   progress: number;
   scenario: Scenario;
   latest_telemetry: Record<string, string | number | boolean>;
   summary: EpisodeSummary | null;
   artifacts: Record<string, string>;
   error: string | null;
+};
+
+export type FrameRecord = {
+  frame_id: string;
+  index: number;
+  timestamp_s: number;
+  rgb_url: string;
+  depth_preview_url: string;
+  segmentation_preview_url: string;
+  labels_url: string;
+  lidar_points: number;
+  telemetry: {
+    frame: number;
+    time_s: number;
+    progress: number;
+    water_left_percent: number;
+    cup_tilt_deg: number;
+    collisions: number;
+    distance_to_goal_m: number;
+    reward: number;
+    goal_reached: boolean;
+  };
+};
+
+export type FrameManifest = {
+  run_id: string;
+  frame_count: number;
+  capture_rate_hz: number;
+  width: number;
+  height: number;
+  frames: FrameRecord[];
 };
 
 export type VisualPreviewStatus = {

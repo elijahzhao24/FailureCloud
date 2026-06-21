@@ -13,6 +13,7 @@ export type WorkspaceSession = {
   request: TestGenerationRequest;
   response: TestGenerationResponse;
   selectedTestId: string | null;
+  runIds?: Record<string, string>;
 };
 
 export function loadWorkspaceSession(): WorkspaceSession | null {
@@ -113,4 +114,14 @@ export function updateSuggestionScenario(
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return updated;
+}
+
+export function saveRunForTest(testId: string, runId: string): void {
+  const session = loadWorkspaceSession();
+  if (!session) return;
+  const next: WorkspaceSession = {
+    ...session,
+    runIds: { ...session.runIds, [testId]: runId },
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }

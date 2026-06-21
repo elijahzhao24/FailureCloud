@@ -9,7 +9,7 @@ import numpy as np
 import pybullet as p
 from PIL import Image
 
-from .models import EpisodeSummary, RunManifest, ScenarioV01
+from .models import EpisodeSummary, FrameManifest, FrameRecord, ScenarioV01
 from .store import store
 
 
@@ -34,11 +34,45 @@ def _create_box(
     )
 
 
-def _route_position(progress: float) -> tuple[np.ndarray, float, float]:
-    waypoints = np.asarray(
-        [[0.0, 0.0], [1.85, 0.0], [2.35, -0.85], [3.15, -0.85], [3.7, 0.0], [5.4, 0.0]],
-        dtype=np.float64,
-    )
+def _set_run_state(
+    run_id: str,
+    *,
+    phase: str,
+    progress: float | None = None,
+    telemetry: dict[str, float | int | bool] | None = None,
+) -> None:
+    with store.lock:
+        current = store.runs[run_id]
+        current.phase = phase
+        if progress is not None:
+            current.progress = progress
+        if telemetry is not None:
+            current.latest_telemetry = telemetry
+        current.updated_at = datetime.now(timezone.utc)
+
+
+def _route_position(
+    progress: float,
+    start: np.ndarray,
+    goal: np.ndarray,
+    obstacle: np.ndarray | None,
+) -> tuple[np.ndarray, float, float]:
+    if obstacle is None:
+        waypoints = np.asarray([start, goal], dtype=np.float64)
+    else:
+        direction = -1.0 if obstacle[1] >= 0 else 1.0
+        detour_y = obstacle[1] + direction * 0.85
+        waypoints = np.asarray(
+            [
+                start,
+                [max(start[0] + 0.5, obstacle[0] - 0.9), start[1]],
+                [obstacle[0] - 0.5, detour_y],
+                [obstacle[0] + 0.7, detour_y],
+                [min(goal[0] - 0.4, obstacle[0] + 1.2), goal[1]],
+                goal,
+            ],
+            dtype=np.float64,
+        )
     segment_lengths = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
     total = float(segment_lengths.sum())
     distance = np.clip(progress, 0.0, 1.0) * total
@@ -53,6 +87,39 @@ def _route_position(progress: float) -> tuple[np.ndarray, float, float]:
             return pos, yaw, turn
         traversed += float(length)
     return waypoints[-1], 0.0, 0.0
+
+
+def _write_depth_preview(path: Path, depth: np.ndarray) -> None:
+    finite = depth[np.isfinite(depth)]
+    if finite.size == 0:
+        normalized = np.zeros(depth.shape, dtype=np.uint8)
+    else:
+        near = float(np.percentile(finite, 3))
+        far = float(np.percentile(finite, 97))
+        scale = max(far - near, 1e-6)
+        normalized = np.clip((depth - near) / scale, 0.0, 1.0)
+        normalized = ((1.0 - normalized) * 255).astype(np.uint8)
+    Image.fromarray(normalized, mode="L").save(path)
+
+
+def _write_segmentation_preview(
+    path: Path,
+    segmentation: np.ndarray,
+    body_registry: dict[int, tuple[int, int]],
+) -> None:
+    palette = {
+        0: (238, 238, 233),
+        CLASS_IDS["floor"]: (196, 199, 194),
+        CLASS_IDS["mobile_base"]: (16, 18, 17),
+        CLASS_IDS["cup"]: (109, 174, 199),
+        CLASS_IDS["obstacle"]: (223, 123, 50),
+        CLASS_IDS["pedestrian"]: (202, 163, 60),
+    }
+    preview = np.full((*segmentation.shape, 3), palette[0], dtype=np.uint8)
+    object_ids = segmentation & ((1 << 24) - 1)
+    for body_id, (semantic_id, _) in body_registry.items():
+        preview[object_ids == body_id] = palette.get(semantic_id, palette[0])
+    Image.fromarray(preview, mode="RGB").save(path)
 
 
 def _capture_camera(
@@ -152,6 +219,7 @@ def run_simulation(run_id: str) -> None:
     with store.lock:
         manifest = store.runs[run_id]
         manifest.status = "running"
+        manifest.phase = "compiling_scenario"
         manifest.updated_at = datetime.now(timezone.utc)
 
     scenario = manifest.scenario
@@ -159,7 +227,9 @@ def run_simulation(run_id: str) -> None:
     for relative in (
         "sensor_data/rgb",
         "sensor_data/depth",
+        "sensor_data/depth_preview",
         "sensor_data/seg",
+        "sensor_data/seg_preview",
         "sensor_data/lidar",
         "labels",
         "eval",
@@ -169,6 +239,7 @@ def run_simulation(run_id: str) -> None:
     (run_dir / "scenario.json").write_text(
         scenario.model_dump_json(by_alias=True, indent=2)
     )
+    _set_run_state(run_id, phase="building_simulation", progress=0.04)
 
     client = p.connect(p.DIRECT)
     try:
@@ -194,17 +265,36 @@ def run_simulation(run_id: str) -> None:
             scenario.robot.start_pose.position.list(),
             [0.1, 0.95, 0.88, 1],
         )
-        obstacle = next(obj for obj in scenario.objects if obj.id == "box_1")
-        box_id = _create_box(
-            [obstacle.dimensions.x / 2, obstacle.dimensions.y / 2, obstacle.dimensions.z / 2],
-            obstacle.pose.position.list(),
-            [0.93, 0.35, 0.12, 1],
+        obstacle = next(
+            (obj for obj in scenario.objects if obj.class_name == "obstacle"),
+            None,
         )
-        actor = scenario.dynamic_actors[0]
-        human_id = _create_box(
-            [actor.dimensions.x / 2, actor.dimensions.y / 2, actor.dimensions.z / 2],
-            actor.trajectory[0].list(),
-            [0.93, 0.76, 0.22, 1],
+        box_id = (
+            _create_box(
+                [
+                    obstacle.dimensions.x / 2,
+                    obstacle.dimensions.y / 2,
+                    obstacle.dimensions.z / 2,
+                ],
+                obstacle.pose.position.list(),
+                [0.93, 0.35, 0.12, 1],
+            )
+            if obstacle
+            else None
+        )
+        actor = scenario.dynamic_actors[0] if scenario.dynamic_actors else None
+        human_id = (
+            _create_box(
+                [
+                    actor.dimensions.x / 2,
+                    actor.dimensions.y / 2,
+                    actor.dimensions.z / 2,
+                ],
+                actor.trajectory[0].list(),
+                [0.93, 0.76, 0.22, 1],
+            )
+            if actor
+            else None
         )
         cup_id = _create_box(
             [0.08, 0.08, 0.11],
@@ -217,20 +307,28 @@ def run_simulation(run_id: str) -> None:
             [0.12, 0.9, 0.42, 0.45],
         )
 
-        body_registry = {
+        body_registry: dict[int, tuple[int, int]] = {
             floor_id: (CLASS_IDS["floor"], 1),
             robot_id: (CLASS_IDS["mobile_base"], 2),
             cup_id: (CLASS_IDS["cup"], 3),
-            box_id: (CLASS_IDS["obstacle"], 4),
-            human_id: (CLASS_IDS["pedestrian"], 5),
         }
-        metadata = {
+        metadata: dict[int, dict[str, str]] = {
             robot_id: {"instance_id": "robot_1", "class_name": "mobile_base"},
             cup_id: {"instance_id": "cup_1", "class_name": "cup"},
-            box_id: {"instance_id": "box_1", "class_name": "obstacle"},
-            human_id: {"instance_id": "worker_1", "class_name": "pedestrian"},
             goal_id: {"instance_id": "goal_1", "class_name": "goal"},
         }
+        if box_id is not None and obstacle is not None:
+            body_registry[box_id] = (CLASS_IDS["obstacle"], 4)
+            metadata[box_id] = {
+                "instance_id": obstacle.id,
+                "class_name": "obstacle",
+            }
+        if human_id is not None and actor is not None:
+            body_registry[human_id] = (CLASS_IDS["pedestrian"], 5)
+            metadata[human_id] = {
+                "instance_id": actor.id,
+                "class_name": "pedestrian",
+            }
 
         duration = scenario.task.termination.timeout_s
         capture_rate = scenario.sensors.capture_rate_hz
@@ -240,23 +338,57 @@ def run_simulation(run_id: str) -> None:
         max_tilt = 0.0
         collisions = 0
         telemetry_rows: list[dict[str, float | int | bool]] = []
+        frame_records: list[FrameRecord] = []
         previous_position = np.asarray(scenario.robot.start_pose.position.list()[:2])
         previous_velocity = 0.0
+        start_position = np.asarray(
+            [
+                scenario.robot.start_pose.position.x,
+                scenario.robot.start_pose.position.y,
+            ],
+            dtype=np.float64,
+        )
+        goal_position = np.asarray(
+            [
+                scenario.robot.goal_pose.position.x,
+                scenario.robot.goal_pose.position.y,
+            ],
+            dtype=np.float64,
+        )
+        obstacle_position = (
+            np.asarray(
+                [obstacle.pose.position.x, obstacle.pose.position.y],
+                dtype=np.float64,
+            )
+            if obstacle
+            else None
+        )
+        _set_run_state(run_id, phase="running_robot_test", progress=0.08)
 
         for frame_index in range(frame_count):
             progress = frame_index / max(frame_count - 1, 1)
             time_s = progress * duration
-            position_2d, yaw, turn = _route_position(progress)
+            position_2d, yaw, turn = _route_position(
+                progress,
+                start_position,
+                goal_position,
+                obstacle_position,
+            )
             robot_position = np.asarray([position_2d[0], position_2d[1], 0.22])
             p.resetBasePositionAndOrientation(
                 robot_id, robot_position.tolist(), p.getQuaternionFromEuler([0, 0, yaw])
             )
 
-            actor_phase = min(1.0, time_s * actor.speed_mps / 2.9)
-            actor_start = np.asarray(actor.trajectory[0].list())
-            actor_end = np.asarray(actor.trajectory[-1].list())
-            actor_position = actor_start * (1 - actor_phase) + actor_end * actor_phase
-            p.resetBasePositionAndOrientation(human_id, actor_position.tolist(), [0, 0, 0, 1])
+            if actor is not None and human_id is not None:
+                actor_phase = min(1.0, time_s * actor.speed_mps / 2.9)
+                actor_start = np.asarray(actor.trajectory[0].list())
+                actor_end = np.asarray(actor.trajectory[-1].list())
+                actor_position = (
+                    actor_start * (1 - actor_phase) + actor_end * actor_phase
+                )
+                p.resetBasePositionAndOrientation(
+                    human_id, actor_position.tolist(), [0, 0, 0, 1]
+                )
 
             slip = 1.0 - min(1.0, physics.floor_friction)
             velocity = (
@@ -298,7 +430,10 @@ def run_simulation(run_id: str) -> None:
             total_reward += reward
 
             p.performCollisionDetection()
-            contact_now = bool(p.getContactPoints(robot_id, box_id) or p.getContactPoints(robot_id, human_id))
+            contact_now = bool(
+                (box_id is not None and p.getContactPoints(robot_id, box_id))
+                or (human_id is not None and p.getContactPoints(robot_id, human_id))
+            )
             if contact_now:
                 collisions += 1
                 total_reward += scenario.task.reward.collision_penalty
@@ -316,6 +451,15 @@ def run_simulation(run_id: str) -> None:
             Image.fromarray(rgb).save(run_dir / "sensor_data/rgb" / f"{frame_id}.png")
             np.save(run_dir / "sensor_data/depth" / f"{frame_id}.npy", depth)
             np.save(run_dir / "sensor_data/seg" / f"{frame_id}.npy", segmentation)
+            _write_depth_preview(
+                run_dir / "sensor_data/depth_preview" / f"{frame_id}.png",
+                depth,
+            )
+            _write_segmentation_preview(
+                run_dir / "sensor_data/seg_preview" / f"{frame_id}.png",
+                segmentation,
+                body_registry,
+            )
             lidar_cfg = scenario.sensors.lidar
             lidar = _capture_lidar(
                 robot_position,
@@ -346,15 +490,45 @@ def run_simulation(run_id: str) -> None:
                 "goal_reached": progress >= 0.995,
             }
             telemetry_rows.append(telemetry)
-            with store.lock:
-                current = store.runs[run_id]
-                current.progress = progress
-                current.latest_telemetry = telemetry
-                current.updated_at = datetime.now(timezone.utc)
+            frame_records.append(
+                FrameRecord(
+                    frame_id=frame_id,
+                    index=frame_index,
+                    timestamp_s=round(time_s, 3),
+                    rgb_url=(
+                        f"/artifacts/runs/{run_id}/sensor_data/rgb/{frame_id}.png"
+                    ),
+                    depth_preview_url=(
+                        f"/artifacts/runs/{run_id}/sensor_data/depth_preview/"
+                        f"{frame_id}.png"
+                    ),
+                    segmentation_preview_url=(
+                        f"/artifacts/runs/{run_id}/sensor_data/seg_preview/"
+                        f"{frame_id}.png"
+                    ),
+                    labels_url=f"/artifacts/runs/{run_id}/labels/{frame_id}.json",
+                    lidar_points=int(lidar.shape[0]),
+                    telemetry=telemetry,
+                )
+            )
+            phase = (
+                "running_robot_test"
+                if progress < 0.35
+                else "recording_sensors"
+                if progress < 0.78
+                else "generating_labels"
+            )
+            _set_run_state(
+                run_id,
+                phase=phase,
+                progress=0.08 + progress * 0.78,
+                telemetry=telemetry,
+            )
 
             previous_position = position_2d
             previous_velocity = float(velocity)
 
+        _set_run_state(run_id, phase="evaluating_result", progress=0.9)
         goal_reached = True
         success_cfg = scenario.task.success
         success = (
@@ -394,6 +568,15 @@ def run_simulation(run_id: str) -> None:
         )
         (run_dir / "eval" / "telemetry.json").write_text(json.dumps(telemetry_rows, indent=2))
         (run_dir / "eval" / "summary.json").write_text(summary.model_dump_json(indent=2))
+        frame_manifest = FrameManifest(
+            run_id=run_id,
+            frame_count=frame_count,
+            capture_rate_hz=capture_rate,
+            width=camera.width,
+            height=camera.height,
+            frames=frame_records,
+        )
+        (run_dir / "frames.json").write_text(frame_manifest.model_dump_json(indent=2))
         (run_dir / "calib" / "camera_info_front.json").write_text(
             json.dumps(
                 {
@@ -408,9 +591,11 @@ def run_simulation(run_id: str) -> None:
             )
         )
 
+        _set_run_state(run_id, phase="packaging_artifacts", progress=0.96)
         with store.lock:
             current = store.runs[run_id]
             current.status = "completed"
+            current.phase = "completed"
             current.progress = 1.0
             current.summary = summary
             current.updated_at = datetime.now(timezone.utc)
@@ -420,12 +605,14 @@ def run_simulation(run_id: str) -> None:
                     "last_rgb": f"/artifacts/runs/{run_id}/sensor_data/rgb/{frame_count - 1:06d}.png",
                     "telemetry": f"/artifacts/runs/{run_id}/eval/telemetry.json",
                     "summary": f"/artifacts/runs/{run_id}/eval/summary.json",
+                    "frames": f"/v1/runs/{run_id}/frames",
                 }
             )
     except Exception as exc:
         with store.lock:
             current = store.runs[run_id]
             current.status = "failed"
+            current.phase = "failed"
             current.error = str(exc)
             current.updated_at = datetime.now(timezone.utc)
         raise

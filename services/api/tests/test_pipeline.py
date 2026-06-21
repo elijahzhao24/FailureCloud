@@ -74,7 +74,12 @@ def test_simulation_writes_synchronized_sensor_bundle():
     seg_files = sorted((root / "sensor_data/seg").glob("*.npy"))
     lidar_files = sorted((root / "sensor_data/lidar").glob("*.npy"))
     label_files = sorted((root / "labels").glob("*.json"))
+    depth_preview_files = sorted((root / "sensor_data/depth_preview").glob("*.png"))
+    segmentation_preview_files = sorted(
+        (root / "sensor_data/seg_preview").glob("*.png")
+    )
     assert len(rgb_files) == len(depth_files) == len(seg_files) == len(lidar_files) == len(label_files) == 8
+    assert len(depth_preview_files) == len(segmentation_preview_files) == 8
 
     assert Image.open(rgb_files[0]).size == (96, 64)
     depth = np.load(depth_files[0])
@@ -93,6 +98,30 @@ def test_simulation_writes_synchronized_sensor_bundle():
         "box_1",
         "worker_1",
     }
+    frame_manifest = json.loads((root / "frames.json").read_text())
+    assert frame_manifest["frame_count"] == 8
+    assert frame_manifest["frames"][0]["rgb_url"].endswith("000000.png")
+    assert frame_manifest["frames"][-1]["telemetry"]["goal_reached"]
+    assert frame_manifest["frames"][0]["lidar_points"] > 0
+
+
+def test_simulation_supports_static_hazard_scenario_without_dynamic_actor():
+    scenario = compact_scenario()
+    scenario.dynamic_actors = []
+    manifest = RunManifest(
+        run_id="run_static",
+        status="queued",
+        scenario=scenario,
+    )
+    store.runs[manifest.run_id] = manifest
+
+    run_simulation(manifest.run_id)
+
+    run = store.runs[manifest.run_id]
+    frames = json.loads((store.run_dir(manifest.run_id) / "frames.json").read_text())
+    assert run.status == "completed"
+    assert run.phase == "completed"
+    assert frames["frame_count"] == 8
 
 
 def test_exports_are_consistent_and_bundle_is_downloadable():

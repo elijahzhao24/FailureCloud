@@ -217,6 +217,20 @@ class RunCreateRequest(BaseModel):
     scenario: ScenarioV01
 
 
+RunPhase = Literal[
+    "queued",
+    "compiling_scenario",
+    "building_simulation",
+    "running_robot_test",
+    "recording_sensors",
+    "generating_labels",
+    "evaluating_result",
+    "packaging_artifacts",
+    "completed",
+    "failed",
+]
+
+
 class EpisodeSummary(BaseModel):
     success: bool
     failure_code: str | None = None
@@ -233,6 +247,7 @@ class EpisodeSummary(BaseModel):
 class RunManifest(BaseModel):
     run_id: str
     status: Literal["queued", "running", "completed", "failed"]
+    phase: RunPhase = "queued"
     progress: float = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -241,6 +256,27 @@ class RunManifest(BaseModel):
     summary: EpisodeSummary | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+
+
+class FrameRecord(BaseModel):
+    frame_id: str
+    index: int
+    timestamp_s: float
+    rgb_url: str
+    depth_preview_url: str
+    segmentation_preview_url: str
+    labels_url: str
+    lidar_points: int
+    telemetry: dict[str, float | int | bool]
+
+
+class FrameManifest(BaseModel):
+    run_id: str
+    frame_count: int
+    capture_rate_hz: float
+    width: int
+    height: int
+    frames: list[FrameRecord]
 
 
 class VisualPreviewRequest(BaseModel):
