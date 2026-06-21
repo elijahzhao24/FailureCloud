@@ -201,6 +201,18 @@ class TestGenerationResponse(BaseModel):
     generator: Literal["anthropic", "deterministic"]
 
 
+class ScenarioVariantRequest(BaseModel):
+    scenario: ScenarioV01
+    strategy: Literal["harder"] = "harder"
+
+
+class ScenarioVariantResponse(BaseModel):
+    scenario: ScenarioV01
+    validation_report: ValidationReport
+    strategy: Literal["harder"]
+    changes: list[str] = Field(min_length=1)
+
+
 class RunCreateRequest(BaseModel):
     scenario: ScenarioV01
 

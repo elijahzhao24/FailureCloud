@@ -78,3 +78,38 @@ def test_generate_exact_failure_returns_one_direct_test():
     assert len(payload["suggestions"]) == 1
     assert payload["suggestions"][0]["difficulty"] == "hard"
     assert payload["suggestions"][0]["scenario"]["name"] == "Exact requested failure"
+
+
+def test_harder_variant_increases_constraints_and_remains_valid():
+    generated = client.post(
+        "/v1/tests/generate",
+        json={
+            "task": "A warehouse robot carries water around a crossing worker.",
+            "mode": "normal_task",
+        },
+    ).json()
+    original = generated["suggestions"][2]["scenario"]
+
+    response = client.post(
+        "/v1/scenarios/variant",
+        json={"scenario": original, "strategy": "harder"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    variant = payload["scenario"]
+    assert payload["validation_report"]["valid"]
+    assert len(payload["changes"]) >= 5
+    assert (
+        variant["environment"]["physics"]["floor_friction"]
+        < original["environment"]["physics"]["floor_friction"]
+    )
+    assert variant["robot"]["speed_mps"] > original["robot"]["speed_mps"]
+    assert (
+        variant["dynamic_actors"][0]["speed_mps"]
+        > original["dynamic_actors"][0]["speed_mps"]
+    )
+    assert (
+        variant["task"]["success"]["min_water_left_percent"]
+        > original["task"]["success"]["min_water_left_percent"]
+    )

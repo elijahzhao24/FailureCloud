@@ -119,6 +119,18 @@ export type TestGenerationResponse = {
   generator: "anthropic" | "deterministic";
 };
 
+export type ScenarioValidationResponse = {
+  scenario: Scenario | null;
+  validation_report: ValidationReport;
+};
+
+export type ScenarioVariantResponse = {
+  scenario: Scenario;
+  validation_report: ValidationReport;
+  strategy: "harder";
+  changes: string[];
+};
+
 export type EpisodeSummary = {
   success: boolean;
   failure_code: string | null;

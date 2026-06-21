@@ -19,6 +19,8 @@ from .models import (
     ReactorTokenResponse,
     RunCreateRequest,
     RunManifest,
+    ScenarioVariantRequest,
+    ScenarioVariantResponse,
     SweepCreateRequest,
     SweepSummary,
     TestGenerationRequest,
@@ -32,6 +34,7 @@ from .simulator import run_simulation
 from .store import store
 from .sweeps import create_sweep
 from .test_generator import generate_test_suggestions
+from .variants import harder_variant
 from .vendors import create_preview, create_reactor_token
 
 
@@ -77,6 +80,13 @@ def validate_scenario(payload: dict[str, Any]) -> dict[str, Any]:
         "scenario": scenario.model_dump(by_alias=True) if scenario else None,
         "validation_report": report.model_dump(),
     }
+
+
+@app.post("/v1/scenarios/variant", response_model=ScenarioVariantResponse)
+def create_scenario_variant(
+    request: ScenarioVariantRequest,
+) -> ScenarioVariantResponse:
+    return harder_variant(request.scenario)
 
 
 @app.post("/v1/runs", response_model=RunManifest)

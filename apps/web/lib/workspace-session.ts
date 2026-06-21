@@ -1,5 +1,7 @@
 import type {
   RobotTestSuggestion,
+  Scenario,
+  SensorName,
   TestGenerationRequest,
   TestGenerationResponse,
 } from "./types";
@@ -64,4 +66,51 @@ export function selectedSuggestion(
       (item) => item.test_id === session.selectedTestId,
     ) ?? null
   );
+}
+
+function sensorsForScenario(scenario: Scenario): SensorName[] {
+  const sensors: SensorName[] = [];
+  if (scenario.sensors.rgb_camera.enabled) sensors.push("rgb");
+  if (scenario.sensors.depth_camera.enabled) sensors.push("depth");
+  if (scenario.sensors.lidar.enabled) sensors.push("lidar");
+  sensors.push("collision", "pose");
+  return sensors;
+}
+
+function successLabel(scenario: Scenario): string {
+  const success = scenario.task.success;
+  return (
+    `Reach the goal with at least ${success.min_water_left_percent.toFixed(0)}% ` +
+    `water remaining and no more than ${success.max_collisions} collision` +
+    `${success.max_collisions === 1 ? "" : "s"}.`
+  );
+}
+
+export function updateSuggestionScenario(
+  testId: string,
+  scenario: Scenario,
+): RobotTestSuggestion | null {
+  const session = loadWorkspaceSession();
+  if (!session) return null;
+
+  let updated: RobotTestSuggestion | null = null;
+  const suggestions = session.response.suggestions.map((suggestion) => {
+    if (suggestion.test_id !== testId) return suggestion;
+    updated = {
+      ...suggestion,
+      scenario,
+      sensors: sensorsForScenario(scenario),
+      success_criteria: successLabel(scenario),
+    };
+    return updated;
+  });
+  if (!updated) return null;
+
+  const next: WorkspaceSession = {
+    ...session,
+    selectedTestId: testId,
+    response: { ...session.response, suggestions },
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return updated;
 }

@@ -175,7 +175,13 @@ export default function TestSuggestions() {
             <span>Selected test</span>
             <strong>{selected.title}</strong>
           </div>
-          <p>Selection saved. The scenario editor is the next checkpoint.</p>
+          <p>Selection saved as a canonical ScenarioV0_1.</p>
+          <Link
+            className="fc-button fc-button--light"
+            href={`/app/tests/${encodeURIComponent(selected.test_id)}/edit`}
+          >
+            Edit scenario <span aria-hidden="true">→</span>
+          </Link>
         </div>
       ) : (
         <div className="fc-selection-hint">

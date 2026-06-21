@@ -98,6 +98,38 @@ test("moves from landing page through generated test selection", async ({
       }),
     });
   });
+  await page.route("**/v1/scenarios/variant", async (route) => {
+    const request = route.request().postDataJSON();
+    const harder = structuredClone(request.scenario);
+    harder.name = `${harder.name} — harder`;
+    harder.scenario_id = `${harder.scenario_id}_harder`;
+    harder.environment.physics.floor_friction = 0.13;
+    harder.robot.speed_mps = 1.06;
+    harder.task.success.min_water_left_percent = 80;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        scenario: harder,
+        validation_report: { valid: true, normalized: true, issues: [] },
+        strategy: "harder",
+        changes: [
+          "Floor friction reduced from 0.18 to 0.13.",
+          "Robot speed increased from 0.90 to 1.06 m/s.",
+          "The primary obstacle was moved closer to the planned route.",
+          "Minimum water remaining increased from 70% to 80%.",
+        ],
+      }),
+    });
+  });
+  await page.route("**/v1/scenarios/validate", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        scenario: route.request().postDataJSON(),
+        validation_report: { valid: true, normalized: true, issues: [] },
+      }),
+    });
+  });
 
   await page.goto("/");
   await expect(
@@ -121,7 +153,36 @@ test("moves from landing page through generated test selection", async ({
   await page
     .getByRole("button", { name: "Select Slippery Floor Turn" })
     .click();
-  await expect(page.getByText("Selection saved.")).toBeVisible();
+  await expect(page.getByText(/Selection saved as/i)).toBeVisible();
+  await page.getByRole("link", { name: /edit scenario/i }).click();
+
+  await expect(page).toHaveURL(/\/app\/tests\/test-0\/edit$/);
+  await expect(
+    page.getByRole("heading", { name: "Slippery Floor Turn" }),
+  ).toBeVisible();
+  const floorFriction = page.getByRole("slider", { name: "Floor friction" });
+  await expect(floorFriction).toHaveValue("0.18");
+
+  await floorFriction.fill("0.25");
+  await expect(floorFriction).toHaveValue("0.25");
+  await page
+    .getByRole("button", { name: /generate harder variant/i })
+    .click();
+  await expect(page.getByText("Harder variant applied")).toBeVisible();
+  await expect(floorFriction).toHaveValue("0.13");
+
+  await page.getByRole("tab", { name: "JSON" }).click();
+  const jsonEditor = page.getByLabel("Scenario JSON");
+  const edited = JSON.parse(await jsonEditor.inputValue());
+  edited.task.success.min_water_left_percent = 82;
+  await jsonEditor.fill(JSON.stringify(edited, null, 2));
+  await page
+    .getByRole("button", { name: /apply and validate json/i })
+    .click();
+  await page.getByRole("tab", { name: /scenario controls/i }).click();
+  await expect(
+    page.getByRole("slider", { name: "Minimum water remaining" }),
+  ).toHaveValue("82");
   await expect(
     page.getByRole("link", { name: "Describe" }),
   ).toBeVisible();
