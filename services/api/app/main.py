@@ -24,6 +24,7 @@ from .models import (
     VisualPreviewRequest,
     VisualPreviewStatus,
 )
+from .nebius import nebius_status
 from .simulator import run_simulation
 from .store import store
 from .sweeps import create_sweep
@@ -48,6 +49,11 @@ app.mount("/artifacts", StaticFiles(directory=store.artifact_root), name="artifa
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/health/integrations")
+def integration_health() -> dict[str, dict[str, str | bool]]:
+    return {"nebius": nebius_status().public_dict()}
 
 
 @app.post("/v1/scenarios/compile", response_model=CompileResponse)

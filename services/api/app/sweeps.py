@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import itertools
-import os
 import threading
-
-import httpx
 
 from .models import (
     RunManifest,
@@ -12,6 +9,7 @@ from .models import (
     SweepSummary,
     SweepVariantResult,
 )
+from .nebius import nebius_status
 from .store import store
 
 
@@ -57,6 +55,7 @@ def _local_variant(
 def create_sweep(
     run_id: str, specification: SweepSpecification
 ) -> SweepSummary:
+    status = nebius_status()
     with store.lock:
         run = store.runs[run_id]
         sweep_id = store.new_id("sweep")
@@ -64,8 +63,9 @@ def create_sweep(
             sweep_id=sweep_id,
             run_id=run_id,
             status="queued",
-            provider="nebius" if os.getenv("NEBIUS_EXECUTION_ENDPOINT") else "local_fallback",
+            provider="nebius" if status.submission_ready else "local_fallback",
             specification=specification,
+            error=None if status.submission_ready else status.message,
         )
         store.sweeps[sweep_id] = summary
     threading.Thread(
@@ -79,40 +79,20 @@ def _execute_sweep(run: RunManifest, sweep_id: str) -> None:
         store.sweeps[sweep_id].status = "running"
         specification = store.sweeps[sweep_id].specification
     try:
-        endpoint = os.getenv("NEBIUS_EXECUTION_ENDPOINT")
-        api_key = os.getenv("NEBIUS_API_KEY")
-        if endpoint and api_key:
-            response = httpx.post(
-                endpoint,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "run_id": run.run_id,
-                    "scenario": run.scenario.model_dump(by_alias=True),
-                    "specification": specification.model_dump(),
-                },
-                timeout=60,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            results = [
-                SweepVariantResult.model_validate(item)
-                for item in payload.get("results", [])
-            ]
-            if not results:
-                raise ValueError("Nebius job returned no normalized results")
-            provider = "nebius"
-        else:
-            axes = specification.axes
-            results = []
-            for index, values in enumerate(
-                itertools.product(axes[0].values, axes[1].values)
-            ):
-                parameters = {
-                    axes[0].name: values[0],
-                    axes[1].name: values[1],
-                }
-                results.append(_local_variant(run, f"variant_{index:03d}", parameters))
-            provider = "local_fallback"
+        # Cloud submission is added after the official Nebius CLI profile and
+        # worker image are verified. Until then, never POST credentials to a
+        # generic HTTP endpoint: Nebius control-plane APIs use gRPC/CLI auth.
+        axes = specification.axes
+        results = []
+        for index, values in enumerate(
+            itertools.product(axes[0].values, axes[1].values)
+        ):
+            parameters = {
+                axes[0].name: values[0],
+                axes[1].name: values[1],
+            }
+            results.append(_local_variant(run, f"variant_{index:03d}", parameters))
+        provider = "local_fallback"
         success_rate = (
             sum(1 for result in results if result.success) / len(results) if results else 0.0
         )
@@ -143,4 +123,3 @@ def _execute_sweep(run: RunManifest, sweep_id: str) -> None:
             current.provider = "local_fallback"
             current.status = "completed"
             current.error = f"Nebius unavailable; local sweep completed: {exc}"
-
