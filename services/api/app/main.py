@@ -31,7 +31,7 @@ from .models import (
     VisualPreviewStatus,
 )
 from .nebius import nebius_status
-from .simulator import run_simulation
+from .simulator import refresh_lidar_previews, run_simulation
 from .store import store
 from .sweeps import create_sweep
 from .test_generator import generate_test_suggestions
@@ -124,6 +124,7 @@ def get_run_frames(run_id: str) -> FrameManifest:
     path = store.run_dir(run_id) / "frames.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Frame manifest not found")
+    refresh_lidar_previews(run_id, manifest.scenario)
     return FrameManifest.model_validate_json(path.read_text())
 
 

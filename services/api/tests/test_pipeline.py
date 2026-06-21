@@ -11,7 +11,7 @@ from PIL import Image
 from app.compiler import compile_prompt
 from app.exports import generate_exports
 from app.models import RunManifest, SweepSpecification
-from app.simulator import run_simulation
+from app.simulator import _write_lidar_preview, run_simulation
 from app.store import store
 from app.sweep_worker import execute_sweep
 from app.sweeps import create_sweep
@@ -111,6 +111,28 @@ def test_simulation_writes_synchronized_sensor_bundle():
     assert frame_manifest["frames"][0]["rgb_url"].endswith("000000.png")
     assert frame_manifest["frames"][-1]["telemetry"]["goal_reached"]
     assert frame_manifest["frames"][0]["lidar_points"] > 0
+
+
+def test_lidar_preview_auto_fits_observed_returns(tmp_path):
+    preview_path = tmp_path / "lidar.png"
+    lidar = np.asarray(
+        [
+            [1.0, 0.0, 0.0, 1.0, 4.0, 1.0],
+            [10.0, 0.0, 0.0, 0.2, 4.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+
+    _write_lidar_preview(preview_path, lidar, range_m=100.0)
+
+    preview = np.asarray(Image.open(preview_path))
+    orange_pixels = np.argwhere(
+        (preview[:, :, 0] > 140)
+        & (preview[:, :, 1] > 45)
+        & (preview[:, :, 1] < 150)
+    )
+    assert orange_pixels.size
+    assert int(orange_pixels[:, 1].max()) > 500
 
 
 def test_simulation_supports_static_hazard_scenario_without_dynamic_actor():

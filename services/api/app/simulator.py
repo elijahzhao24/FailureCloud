@@ -127,7 +127,15 @@ def _write_lidar_preview(path: Path, lidar: np.ndarray, range_m: float) -> None:
     image = Image.new("RGB", (width, height), (7, 9, 9))
     draw = ImageDraw.Draw(image)
     center_x, center_y = width // 2, height // 2
-    scale = min(width, height) * 0.43 / max(range_m, 1.0)
+    observed_range = (
+        float(np.max(np.hypot(lidar[:, 0], lidar[:, 1])))
+        if lidar.size
+        else float(range_m)
+    )
+    # Auto-fit the observed returns so nearby warehouse geometry does not stay
+    # compressed around the origin when the configured sensor range is large.
+    display_range = max(1.0, observed_range * 1.08)
+    scale = min(width, height) * 0.43 / display_range
     colors = {
         CLASS_IDS["floor"]: (76, 88, 86),
         CLASS_IDS["mobile_base"]: (244, 244, 242),
@@ -135,10 +143,8 @@ def _write_lidar_preview(path: Path, lidar: np.ndarray, range_m: float) -> None:
         CLASS_IDS["obstacle"]: (223, 123, 50),
         CLASS_IDS["pedestrian"]: (220, 183, 70),
     }
-    for radius_m in (2.0, 4.0, 6.0, 8.0, 10.0, 12.0):
-        radius = radius_m * scale
-        if radius > min(width, height) * 0.48:
-            break
+    for ratio in (0.25, 0.5, 0.75, 1.0):
+        radius = display_range * ratio * scale
         draw.ellipse(
             (
                 center_x - radius,
@@ -158,14 +164,29 @@ def _write_lidar_preview(path: Path, lidar: np.ndarray, range_m: float) -> None:
         if not (2 <= px < width - 2 and 2 <= py < height - 2):
             continue
         base = colors.get(int(semantic_id), (110, 231, 183))
-        alpha = max(0.35, min(1.0, float(intensity)))
+        alpha = max(0.7, min(1.0, float(intensity)))
         color = tuple(int(channel * alpha) for channel in base)
-        draw.ellipse((px - 2, py - 2, px + 2, py + 2), fill=color)
+        draw.ellipse((px - 3, py - 3, px + 3, py + 3), fill=color)
     draw.ellipse(
         (center_x - 5, center_y - 5, center_x + 5, center_y + 5),
         fill=(110, 231, 183),
     )
     image.save(path)
+
+
+def refresh_lidar_previews(run_id: str, scenario: ScenarioV01) -> None:
+    run_dir = store.run_dir(run_id)
+    lidar_dir = run_dir / "sensor_data/lidar"
+    preview_dir = run_dir / "sensor_data/lidar_preview"
+    if not lidar_dir.is_dir():
+        return
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    for lidar_path in lidar_dir.glob("*.npy"):
+        _write_lidar_preview(
+            preview_dir / f"{lidar_path.stem}.png",
+            np.load(lidar_path),
+            scenario.sensors.lidar.range_m,
+        )
 
 
 def _capture_camera(

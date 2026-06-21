@@ -48,9 +48,13 @@ function ResultImage({
       : kind === "lidar"
         ? frame.lidar_preview_url
         : frame.rgb_url;
+  const assetUrl = apiAsset(url);
   return (
     <div className={`fc-result-image fc-result-image--${kind}`}>
-      <img alt={`${kind} result frame`} src={apiAsset(url)} />
+      <img
+        alt={`${kind} result frame`}
+        src={kind === "lidar" ? `${assetUrl}?fit=observed-v2` : assetUrl}
+      />
       <span>
         {kind.toUpperCase()} · FRAME {frame.frame_id} ·{" "}
         {frame.timestamp_s.toFixed(2)}s
@@ -333,7 +337,7 @@ export default function ResultsDashboard() {
           <div>
             <span className="fc-badge">Evaluation trace</span>
             <h2>Reward, water retention, and cup stability</h2>
-            <p>Normalized traces across the recorded episode.</p>
+            <p>Recorded simulator telemetry, normalized per trace for comparison.</p>
           </div>
           <RewardChart frames={frames.frames} />
         </section>

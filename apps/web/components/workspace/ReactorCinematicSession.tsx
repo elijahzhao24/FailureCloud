@@ -24,6 +24,7 @@ export default function ReactorCinematicSession({
     reactorRef.current = reactor;
     let disposed = false;
     let started = false;
+    let promptRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
     reactor.on("statusChanged", (nextStatus: ReactorStatus) => {
       if (disposed) return;
@@ -36,6 +37,13 @@ export default function ReactorCinematicSession({
             await reactor.sendCommand("set_seed", { seed: 42 });
             await reactor.sendCommand("set_prompt", { prompt });
             await reactor.sendCommand("start", {});
+            promptRefreshTimer = setInterval(() => {
+              if (!disposed) {
+                void reactor
+                  .sendCommand("set_prompt", { prompt })
+                  .catch(() => undefined);
+              }
+            }, 8_000);
           } catch (error) {
             if (!disposed) {
               onError(
@@ -86,6 +94,7 @@ export default function ReactorCinematicSession({
     return () => {
       disposed = true;
       controller.abort();
+      if (promptRefreshTimer) clearInterval(promptRefreshTimer);
       reactorRef.current = null;
       void reactor.disconnect().catch(() => undefined);
     };

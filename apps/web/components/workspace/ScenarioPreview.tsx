@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { apiAsset, apiFetch, fetcher } from "@/lib/api";
 import type {
@@ -165,7 +165,7 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
     },
   );
 
-  async function launchFallback() {
+  const launchFallback = useCallback(async () => {
     setLaunching(true);
     setLaunchError(null);
     setLive(false);
@@ -185,26 +185,45 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
     } finally {
       setLaunching(false);
     }
-  }
+  }, [suggestion.scenario]);
 
   const imageUrl = apiAsset(data?.media_url ?? data?.poster_url);
   const working =
     launching || data?.status === "queued" || data?.status === "generating";
-  const prompt = [
-    "Cinematic warehouse robotics safety visualization.",
-    `A compact mobile robot carries a cup of water from x ${suggestion.scenario.robot.start_pose.position.x.toFixed(1)}`,
-    `to x ${suggestion.scenario.robot.goal_pose.position.x.toFixed(1)}.`,
-    `Floor friction ${suggestion.scenario.environment.physics.floor_friction.toFixed(2)}.`,
-    suggestion.scenario.objects.some((item) => item.class === "obstacle")
-      ? "A dropped orange box obstructs the route."
-      : "",
-    suggestion.scenario.dynamic_actors.length
-      ? "A warehouse worker crosses the aisle."
-      : "",
-    "Clean realistic industrial lighting, slow tracking camera, no text, no logos.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const obstacleCount = suggestion.scenario.objects.filter(
+    (item) => item.class === "obstacle",
+  ).length;
+  const movingObstacleCount = suggestion.scenario.dynamic_actors.length;
+  const prompt = useMemo(
+    () =>
+      [
+        "Photorealistic cinematic visualization of one compact autonomous mobile robot in a completely empty white infinity studio.",
+        "The world is only a seamless matte-white floor merging into a seamless matte-white background, with a soft horizon and realistic pale-gray contact shadows.",
+        "Show the robot clearly from a low rear three-quarter tracking camera, like a polished robotics product demonstration. The camera follows smoothly behind the robot at a constant distance.",
+        "The robot has four small wheels, a clean dark-gray body, and carries one visible cup of water securely on its top platform.",
+        "The robot drives forward along a gentle curved path. Its wheels steer naturally and the camera follows the turn.",
+        obstacleCount > 0
+          ? `Exactly ${obstacleCount} simple bright-orange rectangular box obstacle${obstacleCount === 1 ? " is" : "s are"} placed well to the robot's front-right side, offset from the center of its path. The robot visibly curves left and passes safely beside the orange obstacle without touching it. The obstacle remains stationary and solid; the robot never intersects, clips through, drives through, or drives over it.`
+          : "The white path ahead of the robot is empty.",
+        movingObstacleCount > 0
+          ? `Exactly ${movingObstacleCount} simple yellow upright rectangular obstacle${movingObstacleCount === 1 ? " remains" : "s remain"} far to the right side of the scene, safely outside the robot's path.`
+          : "",
+        "Nothing else exists in the scene. No warehouse, no factory, no shelves, no walls, no ceiling, no doors, no road, no outdoor landscape, no other vehicles, no people, no animals, no decorations, no signs, no text, and no logos.",
+        "Keep the white studio, robot, cup, and obstacle geometrically stable for the entire continuous shot. No cuts, no first-person view, no aerial view, and no changing environment.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    [movingObstacleCount, obstacleCount],
+  );
+  const handleLiveError = useCallback(
+    (message: string) => {
+      setLaunchError(message);
+      setLive(false);
+      void launchFallback();
+    },
+    [launchFallback],
+  );
+  const handleLiveStop = useCallback(() => setLive(false), []);
 
   return (
     <section className="fc-reactor-card">
@@ -213,8 +232,8 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
           <span className="fc-badge">Optional · illustrative</span>
           <h2>Reactor cinematic preview</h2>
           <p>
-            A visual interpretation for storytelling. It cannot alter scenario
-            geometry, physics, labels, or evaluation metrics.
+            A cinematic robot demonstration inside a minimal white test world. It
+            cannot alter scenario geometry, physics, labels, or evaluation metrics.
           </p>
         </div>
         <div className="fc-reactor-card__actions">
@@ -244,12 +263,8 @@ function ReactorPreview({ suggestion }: { suggestion: RobotTestSuggestion }) {
       <div className="fc-reactor-card__media">
         {live ? (
           <ReactorCinematicSession
-            onError={(message) => {
-              setLaunchError(message);
-              setLive(false);
-              void launchFallback();
-            }}
-            onStop={() => setLive(false)}
+            onError={handleLiveError}
+            onStop={handleLiveStop}
             prompt={prompt}
           />
         ) : imageUrl ? (
