@@ -84,6 +84,41 @@ export type CompileResponse = {
   compiler: "anthropic" | "deterministic";
 };
 
+export type SensorName = "rgb" | "depth" | "lidar" | "collision" | "pose";
+export type ExportName =
+  | "pybullet"
+  | "ros2_folder"
+  | "openpcdet"
+  | "isaac"
+  | "nebius";
+
+export type TestGenerationRequest = {
+  task: string;
+  mode: "normal_task" | "exact_failure";
+  robot_type: "mobile_base";
+  environment: "warehouse";
+  sensors: SensorName[];
+  export_targets: ExportName[];
+};
+
+export type RobotTestSuggestion = {
+  test_id: string;
+  title: string;
+  summary: string;
+  difficulty: "medium" | "hard";
+  sensors: SensorName[];
+  success_criteria: string;
+  failure_risks: string[];
+  scenario: Scenario;
+};
+
+export type TestGenerationResponse = {
+  source_task: string;
+  mode: TestGenerationRequest["mode"];
+  suggestions: RobotTestSuggestion[];
+  generator: "anthropic" | "deterministic";
+};
+
 export type EpisodeSummary = {
   success: boolean;
   failure_code: string | null;
@@ -140,4 +175,3 @@ export type SweepSummary = {
   success_rate: number;
   error: string | null;
 };
-

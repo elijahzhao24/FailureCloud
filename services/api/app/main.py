@@ -21,6 +21,8 @@ from .models import (
     RunManifest,
     SweepCreateRequest,
     SweepSummary,
+    TestGenerationRequest,
+    TestGenerationResponse,
     ValidationReport,
     VisualPreviewRequest,
     VisualPreviewStatus,
@@ -29,6 +31,7 @@ from .nebius import nebius_status
 from .simulator import run_simulation
 from .store import store
 from .sweeps import create_sweep
+from .test_generator import generate_test_suggestions
 from .vendors import create_preview, create_reactor_token
 
 
@@ -60,6 +63,11 @@ def integration_health() -> dict[str, dict[str, str | bool]]:
 @app.post("/v1/scenarios/compile", response_model=CompileResponse)
 def compile_scenario(request: CompileRequest) -> CompileResponse:
     return compile_prompt(request.prompt)
+
+
+@app.post("/v1/tests/generate", response_model=TestGenerationResponse)
+def generate_tests(request: TestGenerationRequest) -> TestGenerationResponse:
+    return generate_test_suggestions(request)
 
 
 @app.post("/v1/scenarios/validate")

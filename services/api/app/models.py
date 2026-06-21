@@ -113,6 +113,7 @@ class TaskConfig(BaseModel):
 
 
 ExportName = Literal["pybullet", "ros2_folder", "openpcdet", "isaac", "nebius"]
+SensorName = Literal["rgb", "depth", "lidar", "collision", "pose"]
 
 
 class ScenarioV01(BaseModel):
@@ -159,6 +160,45 @@ class CompileResponse(BaseModel):
     scenario: ScenarioV01
     validation_report: ValidationReport
     compiler: Literal["anthropic", "deterministic"]
+
+
+class TestGenerationRequest(BaseModel):
+    task: str = Field(min_length=8, max_length=2000)
+    mode: Literal["normal_task", "exact_failure"] = "normal_task"
+    robot_type: Literal["mobile_base"] = "mobile_base"
+    environment: Literal["warehouse"] = "warehouse"
+    sensors: list[SensorName] = Field(
+        default_factory=lambda: ["rgb", "depth", "lidar", "collision", "pose"],
+        min_length=1,
+    )
+    export_targets: list[ExportName] = Field(
+        default_factory=lambda: [
+            "pybullet",
+            "ros2_folder",
+            "openpcdet",
+            "isaac",
+            "nebius",
+        ],
+        min_length=1,
+    )
+
+
+class RobotTestSuggestion(BaseModel):
+    test_id: str
+    title: str
+    summary: str
+    difficulty: Literal["medium", "hard"]
+    sensors: list[SensorName]
+    success_criteria: str
+    failure_risks: list[str] = Field(min_length=1)
+    scenario: ScenarioV01
+
+
+class TestGenerationResponse(BaseModel):
+    source_task: str
+    mode: Literal["normal_task", "exact_failure"]
+    suggestions: list[RobotTestSuggestion] = Field(min_length=1, max_length=5)
+    generator: Literal["anthropic", "deterministic"]
 
 
 class RunCreateRequest(BaseModel):

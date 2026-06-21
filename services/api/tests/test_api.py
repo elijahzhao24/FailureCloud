@@ -30,3 +30,51 @@ def test_missing_resources_return_404():
     assert client.get("/v1/runs/missing").status_code == 404
     assert client.get("/v1/previews/reactor/missing").status_code == 404
 
+
+def test_generate_robot_tests_returns_five_executable_suggestions():
+    response = client.post(
+        "/v1/tests/generate",
+        json={
+            "task": "A warehouse robot carries a cup of water across the floor.",
+            "mode": "normal_task",
+            "robot_type": "mobile_base",
+            "environment": "warehouse",
+            "sensors": ["depth", "collision", "pose"],
+            "export_targets": ["pybullet", "openpcdet"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["generator"] == "deterministic"
+    assert len(payload["suggestions"]) == 5
+    assert len({item["test_id"] for item in payload["suggestions"]}) == 5
+    assert all(
+        item["scenario"]["schema_version"] == "0.1.0"
+        for item in payload["suggestions"]
+    )
+    assert all(
+        item["scenario"]["exports"] == ["pybullet", "openpcdet"]
+        for item in payload["suggestions"]
+    )
+    first_scenario = payload["suggestions"][0]["scenario"]
+    assert first_scenario["environment"]["physics"]["floor_friction"] == 0.18
+    assert not first_scenario["sensors"]["rgb_camera"]["enabled"]
+    assert first_scenario["sensors"]["depth_camera"]["enabled"]
+    assert not first_scenario["sensors"]["lidar"]["enabled"]
+
+
+def test_generate_exact_failure_returns_one_direct_test():
+    response = client.post(
+        "/v1/tests/generate",
+        json={
+            "task": "Create a slippery warehouse route with a dropped box.",
+            "mode": "exact_failure",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["suggestions"]) == 1
+    assert payload["suggestions"][0]["difficulty"] == "hard"
+    assert payload["suggestions"][0]["scenario"]["name"] == "Exact requested failure"
