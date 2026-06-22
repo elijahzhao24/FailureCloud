@@ -1,0 +1,26 @@
+{
+  "name": "failurecloud-remotion-deck",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "present": "vite --host 0.0.0.0 --open",
+    "build": "vite build",
+    "render": "remotion render src/index.ts FailureCloudDeck out/failurecloud-deck.mp4",
+    "still": "remotion still src/index.ts FailureCloudDeck out/preview.png --frame=360"
+  },
+  "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@remotion/cli": "4.0.481",
+    "@remotion/player": "4.0.481",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.481"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.4",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.1.0"
+  }
+}
