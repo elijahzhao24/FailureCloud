@@ -9,7 +9,7 @@ import {
 } from "remotion";
 
 export const SLIDE_FRAMES = 150;
-export const SLIDE_COUNT = 7;
+export const SLIDE_COUNT = 6;
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -56,7 +56,7 @@ function Slide({
       <div className="slide-grid" />
       <header>
         <Brand />
-        <span className="slide-index">{index} / 07</span>
+        <span className="slide-index">{index} / 06</span>
       </header>
       <main>
         <div className="eyebrow">{title}</div>
@@ -333,64 +333,6 @@ function WhatItIs() {
   );
 }
 
-const layers = [
-  ["01", "Intent", "Natural-language task + Claude edge-case generation"],
-  ["02", "Canonical contract", "ScenarioV0_1: robot, world, sensors, success"],
-  ["03", "Execution", "Three.js preview + deterministic PyBullet adapter"],
-  ["04", "Evidence", "RGB · depth · LiDAR · labels · telemetry · reward"],
-];
-
-function TechStack() {
-  const frame = useCurrentFrame();
-
-  return (
-    <Slide index="05" title="Technology stack">
-      <div className="architecture-layout">
-        <div>
-          <h2
-            className="slide-title"
-            style={{
-              opacity: enter(frame, 2),
-              transform: `translateY(${shift(frame, 2)}px)`,
-            }}
-          >
-            Built for fast iteration.
-            <br />
-            <span>Designed for extension.</span>
-          </h2>
-          <p className="body-copy" style={{opacity: enter(frame, 14)}}>
-            A desktop React workspace sits on a typed Python simulation and
-            evaluation backend, with external AI and compute kept behind adapters.
-          </p>
-          <div className="stack-pills" style={{opacity: enter(frame, 24)}}>
-            <span>Next.js + React</span>
-            <span>FastAPI + Pydantic</span>
-            <span>Three.js</span>
-            <span>PyBullet</span>
-            <span>Claude</span>
-          </div>
-        </div>
-        <div className="layer-stack">
-          {layers.map(([number, name, detail], index) => (
-            <div
-              className={`layer layer--${index}`}
-              key={name}
-              style={{
-                opacity: enter(frame, 15 + index * 8),
-                transform: `translateX(${shift(frame, 15 + index * 8, 45)}px)`,
-              }}
-            >
-              <span>{number}</span>
-              <strong>{name}</strong>
-              <p>{detail}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Slide>
-  );
-}
-
 const architectureNodes = [
   {
     className: "system-node--frontend",
@@ -425,7 +367,7 @@ const architectureNodes = [
   {
     className: "system-node--sim",
     eyebrow: "Execution",
-    title: "PyBullet adapter",
+    title: "URDF/USD adaptors",
     detail: "Physics · cameras · ray-cast LiDAR",
   },
   {
@@ -446,7 +388,7 @@ function SystemArchitecture() {
   const frame = useCurrentFrame();
 
   return (
-    <Slide dark index="06" title="System architecture">
+    <Slide dark index="05" title="System architecture">
       <div className="system-heading">
         <h2
           className="slide-title"
@@ -539,7 +481,7 @@ function Exports() {
   const orbit = interpolate(frame, [0, SLIDE_FRAMES], [-2, 2]);
 
   return (
-    <Slide dark index="07" title="Exports & compatibility">
+    <Slide dark index="06" title="Exports & compatibility">
       <div className="exports-layout">
         <div>
           <h2
@@ -613,12 +555,9 @@ export const FailureCloudDeck = () => {
         <WhatItIs />
       </Sequence>
       <Sequence durationInFrames={SLIDE_FRAMES} from={SLIDE_FRAMES * 4}>
-        <TechStack />
-      </Sequence>
-      <Sequence durationInFrames={SLIDE_FRAMES} from={SLIDE_FRAMES * 5}>
         <SystemArchitecture />
       </Sequence>
-      <Sequence durationInFrames={SLIDE_FRAMES} from={SLIDE_FRAMES * 6}>
+      <Sequence durationInFrames={SLIDE_FRAMES} from={SLIDE_FRAMES * 5}>
         <Exports />
       </Sequence>
     </AbsoluteFill>
